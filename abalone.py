@@ -2,6 +2,7 @@ import numpy as np
 
 import munge
 import gp_regression as gpr
+from kernels import Gamma, InvGamma, LogNormal
 
 def process_data():
     convertfunc = lambda s: float(0.0) if s=='M' else float(1.0) if s=='F' else float(2.0) if s=='I' else float(-1)
@@ -19,12 +20,12 @@ def main():
 #    process_data()
 
 #    X = np.genfromtxt("raw_X.dat")
-    y = np.genfromtxt("raw_y.dat")
-    nX = np.genfromtxt("cooked_X.dat")
+#    y = np.genfromtxt("raw_y.dat")
+#    nX = np.genfromtxt("cooked_X.dat")
 #    ny = np.genfromtxt("cooked_y.dat")
 
     #distance_quantiles(X, [0.05, 0.1, 0.5, 0.9, 0.95])
-    widths = munge.distance_quantiles(nX, [0.01, 0.05, 0.1, 0.5, 0.9, 0.95])
+#    widths = munge.distance_quantiles(nX, [0.01, 0.05, 0.1, 0.5, 0.9, 0.95])
 
 #    gp1 = gpr.GaussianProcess(X = nX[1:10, :], y = y[1:10], sigma = 0.1, kernel="sqexp", kernel_params=(22,))
 #    gp1.save_trained_model("model.npz")
@@ -37,7 +38,7 @@ def main():
 
 #    gpr.cross_validate(X, y, kernel="sqexp", folds=5, kernel_params_values= [list(widths),], sigma_values=[0.005, 0.01, 0.03, 0.1, 0.3, 1, 3])
 #    gpr.cross_validate(nX, y, kernel="se", folds=5, kernel_params_values= [list(widths),], sigma_values=[0.01, 0.03, 0.1, 0.3, 1, 3])
-    """
+
     X = np.array([
         [ -4.0 ],
         [ -3.0 ],
@@ -55,13 +56,29 @@ def main():
 
     ip = np.array((-4.38027342683e-07, 1.08346151297, 0.798937185643))
     sp = np.array((.2, 1, 1))
-    best_params = gpr.optimize_hyperparams(X, y, "se", sp)
-    best_params = ip
+    best_params, v = gpr.optimize_hyperparams(X, y, "se", start_kernel_params=sp, kernel_priors=[InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)])
+#    best_params = ip
 
-    gp = gpr.GaussianProcess(X = X, y = y, kernel="se", kernel_params=best_params)
-    print "best params", best_params
+    print best_params, v
 
-    gpr.gp_1D_predict(gp, x_min = -5.0, x_max = 5.0 )"""
+    gp = gpr.GaussianProcess(X = X, y = y, kernel="se", kernel_params=np.asarray(best_params))
+
+#    import pdb
+#    pdb.set_trace()
+#    print gp.K
+
+#    print "best params", best_params
+
+#    print "computing bll"
+#    bll = gpr.gp_nll_ngrad(X, y, "se", kernel_params=best_params, kernel_extra=None, kernel_priors=[Gamma(1.0, 1.0), Gamma(1.0, 1.0), LogNormal(1, 1)])
+#    print "computing ipll"
+#    ipll = gpr.gp_nll_ngrad(X, y, "se", kernel_params=ip, kernel_extra=None, kernel_priors=[Gamma(1.0, 1.0), Gamma(1.0, 1.0), LogNormal(1.0, 1.0)])
+#    print "best ll", bll
+#    print "ip ll", ipll
+
+    gpr.gp_1D_predict(gp, x_min = -5.0, x_max = 5.0 )
+
+"""
     #    print gp.log_likelihood()
 #    gp.save_trained_model("testK.npz")
     
@@ -83,7 +100,7 @@ def main():
     p, ll = gpr.optimize_hyperparams(nX, y, "se", np.array((1, 1, 10)))
     print "fourth try gives", p, ll
 
-
+"""
 #    gp.save_trained_model("testK.npz")
     
 

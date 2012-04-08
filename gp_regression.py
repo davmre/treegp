@@ -2,7 +2,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 import sys
-import itertools, pickle
+import itertools, pickle, traceback
 
 import numpy as np
 import scipy.linalg, scipy.optimize
@@ -72,13 +72,14 @@ def test_kfold(X, y, folds, kernel, kernel_params, K, loss_fn, train_loss=False)
 
 class GaussianProcess:
 
-    def __init__(self, fname=None, X=None, y=None, kernel="se", kernel_params=(1, 1,), K=None, inv=True, mean="constant"):
+    def __init__(self, X=None, y=None, kernel="se", kernel_params=(1, 1,), kernel_priors = None, kernel_extra = None, K=None, inv=True, mean="zero", fname=None):
         if fname is not None:
             self.load_trained_model(fname)
         else:
             self.kernel_name = kernel
             self.kernel_params = kernel_params
-            self.kernel = kernels.setup_kernel(kernel, kernel_params)
+            self.kernel_priors = kernel_priors
+            self.kernel = kernels.setup_kernel(kernel, kernel_params, kernel_extra, kernel_priors)
             self.X = X
             self.n = X.shape[0]
 
@@ -98,19 +99,23 @@ class GaussianProcess:
             else:
                 self.K = K
 
+            self.L = None
+            self.alpha = None
+            self.Kinv = None
             try:
                 self.L = scipy.linalg.cholesky(self.K, lower=True)
                 self.alpha = scipy.linalg.cho_solve((self.L, True), self.y)
-            except ValueError:
-                print "error in cholesky decomp, saving matrix..."
-                np.savez('errorK.npz', K=self.K)
+            except:
+                print traceback.format_exc()
+                u,v = np.linalg.eig(self.K)
+                print self.K, u
                 sys.exit(1)
-            self.Kinv = None
+
             if inv:
                 self.__invert_kernel_matrix()
 
     def __invert_kernel_matrix(self):
-        if self.Kinv is None:
+        if self.Kinv is None and self.L is not None:
             invL = scipy.linalg.inv(self.L)
             self.Kinv = np.dot(invL.T, invL)
         
@@ -125,11 +130,13 @@ class GaussianProcess:
 
     def log_likelihood(self):
         self.__invert_kernel_matrix()
-        ll =  -.5 * (np.dot(self.y.T, np.dot(self.Kinv, self.y)) + log_det(self.K) + self.n * np.log(2*np.pi))
-#        print "params", self.kernel_params
-#        print "returning ll %f = -.5 * (%f + %f + %f)" % (ll, np.dot(self.y.T, np.dot(self.Kinv, self.y)), log_det(self.K), self.n * np.log(2*np.pi))
 
-        print self.kernel_params, "ll", ll
+        # the determinant of a symmetric pos. def. matrix is the product of squares of the diagonal elements of the Cholesky factor 
+        ld2 = np.log(np.diag(self.L)).sum()
+        ll =  -.5 * (np.dot(self.y.T, self.alpha) + self.n * np.log(2*np.pi)) - ld2
+#        print "params", self.kernel_params
+#        print "returning ll %f = -.5 * (%f + %f + %f)" % (ll, np.dot(self.y.T, self.alpha), ld, self.n * np.log(2*np.pi))
+
         return ll
 
     def log_likelihood_gradient(self):
@@ -173,22 +180,47 @@ class GaussianProcess:
         self.kernel = kernels.setup_kernel(kernel_name, kernel_params)        
 #    def validation_loss(self, trainIdx, valIdx, kernel_params, loss_fn):
 
-def gp_ll(X, y, kernel, kernel_params):
-    gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params)
-    return gp.log_likelihood()
-def gp_grad(X, y, kernel, kernel_params):
-    gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params)
-    return gp.log_likelihood_gradient()
-def gp_nll_ngrad(X, y, kernel, kernel_params):
-    gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params)
-    return -1* gp.log_likelihood(), -1 * gp.log_likelihood_gradient()
+def gp_ll(X, y, kernel, kernel_params, kernel_extra):
+    try:
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra)
+        ll = gp.log_likelihood()
+    except:
+        ll = np.float("-inf")
+    return ll
 
-def optimize_hyperparams(X, y, kernel, start_kernel_params):
-    ll = lambda params: -1 * gp_ll(X, y, kernel, params)
-    grad = lambda params: -1 * gp_grad(X, y, kernel, params)
+def gp_grad(X, y, kernel, kernel_params, kernel_extra):
+    try:
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra)
+        grad = gp.log_likelihood_gradient()
+    except:
+        grad = np.zeros(kernel_params.shape)
+    return grad
+
+def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
+    try:
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, kernel_priors=kernel_priors)
+        nll = -1 * gp.log_likelihood()
+        ngrad = -1 * gp.log_likelihood_gradient()
+
+        npll = -1 * gp.kernel.param_prior_ll()
+        npgrad = -1 * gp.kernel.param_prior_grad()
+
+#        print "nll %f + %f = %f" % (nll, npll, nll+npll)
+
+        nll += npll
+        ngrad += npgrad
+
+    except np.linalg.linalg.LinAlgError:
+        nll = np.float("inf")
+        ngrad = np.zeros(kernel_params.shape)
+    return nll, ngrad
+
+def optimize_hyperparams(X, y, kernel, start_kernel_params, kernel_extra=None, kernel_priors=None):
+    ll = lambda params: -1 * gp_ll(X, y, kernel, params, kernel_extra)
+    grad = lambda params: -1 * gp_grad(X, y, kernel, params, kernel_extra)
 #    best_params = scipy.optimize.fmin_bfgs(f=ll, x0=start_kernel_params, fprime=grad)
 
-    llgrad = lambda params: gp_nll_ngrad(X, y, kernel, params)
+    llgrad = lambda params: gp_nll_ngrad(X, y, kernel, params, kernel_extra, kernel_priors)
     best_params, v, d = scipy.optimize.fmin_l_bfgs_b(func=llgrad, x0=start_kernel_params, bounds= [(0, None),]*len(start_kernel_params))
     print "found best params", best_params
     print "ll", v
@@ -290,9 +322,6 @@ def main():
 #    print pickle.dumps(gp)
 
 #    plot_interpolated_surface(gp, X, y)
-
-
-
 
 if __name__ == "__main__":
     main()
