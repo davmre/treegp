@@ -1,5 +1,5 @@
 import numpy as np
- import matplotlib as plt
+import matplotlib as plt
 
 def predict_1d (
     gp,
