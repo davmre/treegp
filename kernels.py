@@ -2,6 +2,10 @@ import numpy as np
 import scipy.special
 
 def gen_pairwise_matrix(f, X1, X2):
+    """
+    Generate the matrix M_{i,j} = f(X1(i, :), X2(j, :)).
+    """
+
     n1 = X1.shape[0]
     n2 = X2.shape[0]
     K = np.zeros((n1,n2))
@@ -125,6 +129,12 @@ class LinearKernel(Kernel):
         return np.zeros((n,m))
 
 class SEKernel(Kernel):
+    """
+    Squared exponential kernel. k(x,y) = sigma_f * exp(-||x-y||^2/ws^2)
+
+    params[0]: sigma_f scales the prior variance
+    params[1:]: ws is an array of characteristic width scales for each coordinate.
+    """
 
     def __init__(self, params, priors = None):
         super(SEKernel, self).__init__(params, priors)
@@ -171,6 +181,11 @@ class SEKernel(Kernel):
         return dK
 
 class DistFNKernel(Kernel):
+    """
+    RBF kernel using a user-supplied distance metric d.
+    k(x,y) = sigma_f * exp(-d(x,y)^2 / ws^2)
+    """
+
     def __init__(self, params, distfn, priors = None, deriv=None):
         super(DistFNKernel, self).__init__(params, priors)
 
@@ -225,6 +240,10 @@ class DistFNKernel(Kernel):
 
 
 class SEKernelIso(SEKernel):
+    """
+    Squared-exponential kernel with isotropic covariance (same width
+    scale for each coordinate).
+    """
     def __init__(self, params, priors = None):
         super(SEKernel, self).__init__(params, priors)
         self.sigma_f = params[0]
@@ -239,8 +258,8 @@ class SEKernelIso(SEKernel):
         if self.ws is not None:
             return
         self.ws = self.w * np.ones((d,))
-        self.iws = 1/self.w
-        self.Winv = 1/np.diag(self.ws)
+        self.iws = 1.0/self.w
+        self.Winv = np.diag(1.0/self.ws)
         self.Winv2 = self.Winv * self.Winv
 
     def __call__(self, X1, X2):
@@ -295,6 +314,10 @@ class DiagonalKernel(Kernel):
                 return gen_pairwise_matrix(f, X1, X2)
 
 def setup_kernel(name, params, extra, priors=None):
+    """
+    Construct a kernel object from a string description.
+    """
+
     if priors is None:
         priors = [None for p in params]
 
@@ -371,74 +394,4 @@ def setup_kernel(name, params, extra, priors=None):
         raise RuntimeError("unrecognized kernel name %s." % (name))
     return k
 
-
-class Distribution(object):
-    def __init__(self):
-        pass
-    def logpdf(x):
-        raise RuntimeError("method not implemented by child class")
-    def logpdf_grad(x):
-        raise RuntimeError("method not implemented by child class")
-
-
-class Gamma(Distribution):
-    def __init__(self, alpha, beta):
-        self.alpha = alpha
-        self.beta = beta
-
-    def logpdf(self, x):
-        alpha = self.alpha
-        beta = self.beta
-
-        if x < 0.0: return np.log(1e-300)
-        # the special case of an exponential distribution is defined even when x==0
-        if alpha == 1: return np.log(beta) - beta*x
-        if x == 0.0: return np.log(1e-300)
-        lp = alpha*np.log(beta) - scipy.special.gammaln(alpha) + (alpha-1)*np.log(x) - beta*x
-        if np.isnan(lp):
-            lp = np.float("-inf")
-        return lp
-
-    def logpdf_dx(self, x):
-        alpha = self.alpha
-        beta = self.beta
-        return (alpha-1)/x - beta
-
-
-class InvGamma(Distribution):
-    def __init__(self, alpha, beta):
-        self.alpha = alpha
-        self.beta = beta
-
-    def logpdf(self, x):
-        alpha = self.alpha
-        beta = self.beta
-        lp = alpha*np.log(beta) - scipy.special.gammaln(alpha) - (alpha+1)*np.log(x) - beta/x
-        if np.isnan(lp):
-            lp = np.float("-inf")
-
-        return lp
-
-    def logpdf_dx(self, x):
-        alpha = self.alpha
-        beta = self.beta
-        return beta/(x**2) - (alpha+1)/x
-
-class LogNormal(Distribution):
-    def __init__(self, mu, sigma):
-        self.mu = mu
-        self.sigma = sigma
-
-    def logpdf(self, x):
-        mu = self.mu
-        sigma = self.sigma
-        lp = -1 * np.log(x) - .5 * np.log(2*np.pi*sigma) - .5 * (np.log(x) - mu)**2 / sigma**2
-        if np.isnan(lp):
-            lp = np.float("-inf")
-        return lp
-
-    def logpdf_dx(self, x):
-        mu = self.mu
-        sigma = self.sigma
-        return (-1 -(np.log(x) - mu)/(sigma**2)) / x
 

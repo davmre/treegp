@@ -1,0 +1,11 @@
+This is very much a work in progress.
+
+See test.py for unit tests and usage examples.
+
+Features:
+	- GP training, prediction, sampling, and likelihood evaluation
+	- Saving and loading trained models to/from a file
+	- Common kernels included, easily extendable to arbitrary kernels
+	- Maximum-likelihood hyperparameter optimization
+	- Common kernel hyperparam prior distributions including gamma, inverse gamma, lognormal, and of course these are extensible. 
+	- k-fold cross-validation with multiple loss functions.
