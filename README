@@ -7,5 +7,5 @@ Features:
 	- Saving and loading trained models to/from a file
 	- Common kernels included, easily extendable to arbitrary kernels
 	- Maximum-likelihood hyperparameter optimization
-	- Common kernel hyperparam prior distributions including gamma, inverse gamma, lognormal, and of course these are extensible. 
+	- Common kernel hyperparam prior distributions including gamma, inverse gamma, lognormal, and of course these are extensible.
 	- k-fold cross-validation with multiple loss functions.
