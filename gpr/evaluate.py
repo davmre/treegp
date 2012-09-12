@@ -1,6 +1,6 @@
 import numpy as np
 
-from gaussian_process import GaussianProcess
+from gp import GaussianProcess
 
 def sq_loss(y1, y2):
     return np.sum(np.abs(y1-y2)**2)
@@ -44,7 +44,7 @@ def cross_validate(X, y, kernel="se", folds=-1, kernel_params_values=None, kerne
 
 def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, loss_fn=sq_loss, train_loss=False):
     """
-    Run kfold cross-validation to evaluate the GP mean predictions with regard to a specified loss function. 
+    Run kfold cross-validation to evaluate the GP mean predictions with regard to a specified loss function.
 
     K is an optional pre-computed kernel matrix.
     """

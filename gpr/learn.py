@@ -7,7 +7,7 @@ import itertools, pickle, traceback
 import numpy as np
 import scipy.linalg, scipy.optimize
 
-from gaussian_process import GaussianProcess
+from gp import GaussianProcess
 import kernels
 
 def gp_ll(X, y, kernel, kernel_params, kernel_extra):
@@ -45,7 +45,7 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
 
         nll = -1 * gp.log_likelihood()
         ngrad = -1 * gp.log_likelihood_gradient()
-            
+
         npll = -1 * gp.kernel.param_prior_ll()
         npgrad = -1 * gp.kernel.param_prior_grad()
 

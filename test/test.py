@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from gpr import munge, kernels, evaluate, learn, distributions, plot
-from gpr.gaussian_process import GaussianProcess
+from gpr.gp import GaussianProcess
 
 class TestAbalone(unittest.TestCase):
 
