@@ -1,0 +1,4 @@
+- various bugfixes and general testing
+- transparent support for multi-output gp regression
+- heteroskedastic gpr
+- approximations (kdtree, subspace, fast multipole / FGT)
