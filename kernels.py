@@ -40,6 +40,10 @@ class Kernel(object):
             return X1, np.reshape(X2, (1, -1))
         elif len(X1.shape)==1 and len(X2.shape)==1 and X1.shape[0]==X2.shape[0]:
             return np.reshape(X1, (1, X1.shape[0])), np.reshape(X2, (1, X2.shape[0]))
+        elif len(X2.shape)==1 and len(X1.shape)==2 and (X1.shape[0] == 1 or X1.shape[1] == 1):
+            return np.reshape(X1, (-1, 1)), np.reshape(X2, (X2.shape[0], 1))
+        elif len(X1.shape)==1 and len(X2.shape)==2 and (X2.shape[0] == 1 or X2.shape[1] == 1):
+            return np.reshape(X1, (X1.shape[0], 1)), np.reshape(X2, (-1, 1))
         else:
             print X1, X2
             raise RuntimeError("Incompatible dimensions in kernel arguments.")

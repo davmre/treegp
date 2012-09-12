@@ -18,8 +18,8 @@ class GaussianProcess:
 
     def __init__(self, X=None, y=None, kernel="se", kernel_params=(1, 1,), kernel_priors = None, kernel_extra = None, K=None, inv=True, mean="constant", fname=None):
 
-        """ Initialize a Gaussian process by providing EITHER the training data (X, y) and kernel info (kernel, kernel_params, kernel_priors, kernel_extra) OR  the filename of a serialized GP. 
-        'K' is an optional precomputed kernel matrix (for efficiency). 
+        """ Initialize a Gaussian process by providing EITHER the training data (X, y) and kernel info (kernel, kernel_params, kernel_priors, kernel_extra) OR  the filename of a serialized GP.
+        'K' is an optional precomputed kernel matrix (for efficiency).
         'mean' specifies a method for estimating the function mean ("zero", "constant", or "linear").
         """
 
@@ -90,7 +90,7 @@ class GaussianProcess:
 
         (n,d) = X1.shape
         means = self.predict(X1)
-        K = self.variance(X1)
+        K = self.covariance(X1)
 
         L = scipy.linalg.cholesky(K, lower=True)
         samples = np.random.randn(n, 1)
@@ -105,18 +105,21 @@ class GaussianProcess:
         K = self.kernel(self.X, X1)
         return self.mu + np.dot(K.T, self.alpha)
 
-    def variance(self, X1):
+    def covariance(self, X1):
         """
-        Compute the posterior variance at a set of points given by the rows of X1.
+        Compute the posterior covariance matrix at a set of points given by the rows of X1.
         """
 
         self.__invert_kernel_matrix()
         K = self.kernel(self.X, X1)
         return self.kernel(X1,X1) - np.dot(K.T, np.dot(self.Kinv, K))
 
+    def variance(self, X1):
+        return np.diag(self.covariance(X1))
+
     def posterior_log_likelihood(self, X1, y):
         """
-        The log probability of the observations (X1, y) under the posterior distribution. 
+        The log probability of the observations (X1, y) under the posterior distribution.
         """
 
         y = np.array(y)
@@ -127,7 +130,7 @@ class GaussianProcess:
 
         self.__invert_kernel_matrix()
 
-        K = self.variance(X1)
+        K = self.covariance(X1)
         y = y-self.predict(X1)
 
         if n==1:
@@ -147,7 +150,7 @@ class GaussianProcess:
 
 
     def log_likelihood(self):
-        """ 
+        """
         Likelihood of the training data under the prior distribution. (this is primarily determined by the covariance kernel and its hyperparameters)
         """
 
@@ -207,13 +210,14 @@ class GaussianProcess:
         self.mean = npzfile['mname'][0]
         self.kernel_name = npzfile['kernel_name'][0]
         self.kernel_params = npzfile['kernel_params']
+#        self.kernel_extra = npzfile['kernel_extra']
         self.alpha = npzfile['alpha']
         self.Kinv = npzfile['Kinv']
         self.L = npzfile['L']
         self.K = npzfile['K']
 
         self.n = self.X.shape[0]
-        self.kernel = kernels.setup_kernel(kernel_name, kernel_params)
+        self.kernel = kernels.setup_kernel(self.kernel_name, self.kernel_params, extra=None)
 #    def validation_loss(self, trainIdx, valIdx, kernel_params, loss_fn):
 
 

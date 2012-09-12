@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 def predict_1d (
     gp,
@@ -20,10 +20,10 @@ def predict_1d (
     variance = gp.variance( predict_x )
     plt.figure()
 
+
+    z = zip( predict_x, mean.flat, variance  )
     data = [
-        (x,y,max(v,0.0))
-        for x,y,v
-        in zip( predict_x, mean.flat, variance  )
+        (x,y,max(v,0.0)) for (x,y,v) in z
         ]
     data.sort( key = lambda d: d[0] ) # sort on X axis
 
