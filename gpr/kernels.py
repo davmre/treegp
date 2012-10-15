@@ -134,15 +134,15 @@ class LinearKernel(Kernel):
 
 class SEKernel(Kernel):
     """
-    Squared exponential kernel. k(x,y) = sigma_f * exp(-||x-y||^2/ws^2)
+    Squared exponential kernel. k(x,y) = sigma2_f * exp(-||x-y||^2/ws^2)
 
-    params[0]: sigma_f scales the prior variance
+    params[0]: sigma2_f scales the prior variance
     params[1:]: ws is an array of characteristic width scales for each coordinate.
     """
 
     def __init__(self, params, priors = None):
         super(SEKernel, self).__init__(params, priors)
-        self.sigma_f = params[0]
+        self.sigma2_f = params[0]
         self.ws = params[1:]
         self.iws = 1/self.ws
         self.Winv = 1/np.diag(self.ws)
@@ -170,7 +170,7 @@ class SEKernel(Kernel):
     def __call__(self, X1, X2):
         X1, X2 = self._check_args(X1,X2)
         wsd = self._sqdistances(X1 * self.iws, X2 * self.iws)
-        K = self.sigma_f * np.exp(-.5 * wsd)
+        K = self.sigma2_f * np.exp(-.5 * wsd)
         return K
 
     def derivative_wrt_i(self, i, X1, X2):
@@ -179,7 +179,7 @@ class SEKernel(Kernel):
         if i==0:
             dK = np.exp(-.5 * wsd)
         elif i>=1 and i-1 < len(self.ws):
-            dK = self.sigma_f * np.exp(-.5 * wsd) * self.__sqidistances(i-1, X1, X2)  / (self.ws[i-1]**3)
+            dK = self.sigma2_f * np.exp(-.5 * wsd) * self.__sqidistances(i-1, X1, X2)  / (self.ws[i-1]**3)
         else:
             raise RuntimeError("Unknown parameter index %d (out of %d) for SEKernel." % (i, self.nparams))
         return dK
@@ -187,18 +187,18 @@ class SEKernel(Kernel):
 class DistFNKernel(Kernel):
     """
     RBF kernel using a user-supplied distance metric d.
-    k(x,y) = sigma_f * exp(-d(x,y)^2 / ws^2)
+    k(x,y) = sigma2_f * exp(-d(x,y)^2 / ws^2)
     """
 
     def __init__(self, params, distfn, priors = None, deriv=None):
         super(DistFNKernel, self).__init__(params, priors)
 
         if len(params) == 1:
-            self.sigma_f = 1
+            self.sigma2_f = 1
             self.w = params[0]
             self.df_params = []
         else:
-            self.sigma_f = params[0]
+            self.sigma2_f = params[0]
             self.w = params[1]
             self.df_params = params[2:]
 
@@ -208,13 +208,13 @@ class DistFNKernel(Kernel):
     def __call__(self, X1, X2):
         X1, X2 = self._check_args(X1,X2)
 
-        if self.w == 0 or self.sigma_f ==0:
-            print "warning: invalid kernel parameter, returning 0", self.w, self.sigma_f
+        if self.w == 0 or self.sigma2_f ==0:
+            print "warning: invalid kernel parameter, returning 0", self.w, self.sigma2_f
             return np.zeros((X1.shape[0], X1.shape[0]))
 
         D = gen_pairwise_matrix(self.distfn, X1, X2)
         try:
-            d = self.sigma_f**2 * np.exp(-1 * D**2 / self.w**2)
+            d = np.exp(-1 * D**2 / self.w**2)
         except AttributeError:
             import pdb
             pdb.set_trace()
@@ -224,19 +224,19 @@ class DistFNKernel(Kernel):
         X1, X2 = self._check_args(X1,X2)
         D = gen_pairwise_matrix(self.distfn, X1, X2)
 
-        if self.w == 0 or self.sigma_f ==0:
-            print "warning: invalid kernel parameter, returning 0 matrix:", self.w, self.sigma_f
+        if self.w == 0 or self.sigma2_f ==0:
+            print "warning: invalid kernel parameter, returning 0 matrix:", self.w, self.sigma2_f
             return np.zeros((X1.shape[0], X1.shape[0]))
 
         if i==0 and len(self.params) > 1:
-            # deriv wrt sigma_f
-            dK = 2*self.sigma_f * np.exp(-1 * D**2 / self.w**2)
+            # deriv wrt sigma2_f
+            dK = np.exp(-1 * D**2 / self.w**2)
         elif i == 1 or len(self.params) == 1:
             # deriv wrt w
-            dK = 2 * self.sigma_f**2 * np.exp(-1*D**2 / self.w**2) * D**2 / (self.w**3)
+            dK = self.sigma2_f * np.exp(-1*D**2 / self.w**2) * D**2 / (self.w**3)
         elif i > 1:
             dD = gen_pairwise_matrix(lambda x1, x2 : self.distfn_deriv_i(i-2, x1, x2), X1, X2)
-            dK = -2 * self.sigma_f**2 * np.exp(-1*D**2 / self.w**2) * D / (self.w**2) * dD
+            dK = -self.sigma2_f * np.exp(-1*D**2 / self.w**2) * D / (self.w**2) * dD
         else:
             raise RuntimeError("Unknown parameter index %d (out of %d) for DistFNKernel." % (i, self.nparams))
 
@@ -250,8 +250,7 @@ class SEKernelIso(SEKernel):
     """
     def __init__(self, params, priors = None):
         super(SEKernel, self).__init__(params, priors)
-        self.sigma_f = params[0]
-        self.sigma2_f = params[0]**2
+        self.sigma2_f = params[0]
         self.w = params[1]
         self.ws = None
         self.iws = None
@@ -275,10 +274,10 @@ class SEKernelIso(SEKernel):
         X1, X2 = self._check_args(X1,X2)
         w = self.w
         if i==0:
-            dK = 2 * self.sigma_f * np.exp(-.5 * self._sqdistances(X1/w, X2/w))
+            dK =  np.exp(-.5 * self._sqdistances(X1/w, X2/w))
         elif i>=1 and i-1 < len(self.ws):
             wsd = self._sqdistances(X1/w, X2/w)
-            dK = self.sigma2_f * np.exp(-.5 * wsd) * self._sqdistances(X1/w, X2/w)/w
+            dK = np.exp(-.5 * wsd) * self._sqdistances(X1/w, X2/w)/w
         else:
             raise RuntimeError("Unknown parameter index %d (out of %d) for SEKernel." % (i, self.nparams))
         return dK
@@ -291,8 +290,8 @@ class DiagonalKernel(Kernel):
     """
     def __init__(self, params, priors=None):
         super(DiagonalKernel, self).__init__(params, priors)
-        self.s2 = self.params[0]**2
-        self.s = self.params[0]
+        self.s2 = self.params[0]
+        self.s = np.sqrt(self.s2)
 
     def __call__(self, X1, X2):
         X1, X2 = self._check_args(X1,X2)
@@ -302,7 +301,7 @@ class DiagonalKernel(Kernel):
         else:
             (m,d) = X2.shape
             return np.zeros((n,m))
-#            f = lambda x1, x2: self.s2 if almost_equal(x1,x2) else 0
+#            f = lambda x1, x2: self.s2 if x1==x2 else 0
 #            return gen_pairwise_matrix(f, X1, X2)
 
     def derivative_wrt_i(self, i, X1, X2):
@@ -326,19 +325,19 @@ def setup_kernel(name, params, extra, priors=None):
         priors = [None for p in params]
 
     if name == "linear":
-        sigma_n = params[0]
-        k = DiagonalKernel([sigma_n,], priors = priors[0]) + LinearKernel(params[1:], params[1:])
+        sigma2_n = params[0]
+        k = DiagonalKernel([sigma2_n,], priors = priors[0]) + LinearKernel(params[1:], params[1:])
     elif name == "se":
-        sigma_n = params[0]
-        k = DiagonalKernel([sigma_n,], priors = priors[0:1]) + SEKernel(params[1:], priors[1:])
+        sigma2_n = params[0]
+        k = DiagonalKernel([sigma2_n,], priors = priors[0:1]) + SEKernel(params[1:], priors[1:])
     elif name == "se_iso":
-        sigma_n = params[0]
-        k = DiagonalKernel([sigma_n,], priors = priors[0:1]) + SEKernelIso(params[1:], priors[1:])
+        sigma2_n = params[0]
+        k = DiagonalKernel([sigma2_n,], priors = priors[0:1]) + SEKernelIso(params[1:], priors[1:])
     elif name == "se_noiseless":
         k = SEKernel(params)
     elif name == "distfn":
-        sigma_n = params[0]
-        sigma_f = params[1]
+        sigma2_n = params[0]
+        sigma2_f = params[1]
         w = params[2]
         if len(params) > 3:
             distfn = extra[0]
@@ -348,7 +347,7 @@ def setup_kernel(name, params, extra, priors=None):
             distfn_deriv_i = None
         distfn_params = list(params[3:])
 
-        k = DiagonalKernel([sigma_n,], priors = np.asarray(priors[0:1])) + DistFNKernel([sigma_f, w] + distfn_params, distfn, priors = priors[1:], deriv = distfn_deriv_i)
+        k = DiagonalKernel([sigma2_n,], priors = np.asarray(priors[0:1])) + DistFNKernel([sigma2_f, w] + distfn_params, distfn, priors = priors[1:], deriv = distfn_deriv_i)
 
     elif name == "distfns_sum":
         # composite kernel of the form sum_i alpha_i *
@@ -357,7 +356,7 @@ def setup_kernel(name, params, extra, priors=None):
         # length-scale parameters respectively.
 
         # here "params" is a list of 2n+1 entries. The first entry is
-        # sigma_n. The ith subsequent pair of entries gives alpha and
+        # sigma2_n. The ith subsequent pair of entries gives alpha and
         # beta for the ith distance function. "priors" has the same
         # structure and semantics as "params".
         pass
@@ -365,8 +364,8 @@ def setup_kernel(name, params, extra, priors=None):
         # distfn_deriv). distfn_deriv can be None if there are no
         # special params to the distance function.
 
-        sigma_n = params[0]
-        composite_kernel = DiagonalKernel([sigma_n,], priors = [priors[0],])
+        sigma2_n = params[0]
+        composite_kernel = DiagonalKernel([sigma2_n,], priors = [priors[0],])
         for (i, (distfn, distfn_deriv_i)) in enumerate(extra):
             si = 2*i+1
             kparams = params[si:si+2]
@@ -377,15 +376,15 @@ def setup_kernel(name, params, extra, priors=None):
 
     elif name == "distfns_prod":
         # similar to above, except that we construct a product of
-        # distfn kernels, so there is only a single sigma_f magnitude
-        # parameter (specified after sigma_n) instead of an alpha param
+        # distfn kernels, so there is only a single sigma2_f magnitude
+        # parameter (specified after sigma2_n) instead of an alpha param
         # for each kernel.
 
-        sigma_n = params[0]
-        noise_kernel = DiagonalKernel([sigma_n,], priors = [priors[0], ])
+        sigma2_n = params[0]
+        noise_kernel = DiagonalKernel([sigma2_n,], priors = [priors[0], ])
 
-        sigma_f = params[1]
-        composite_kernel = DistFNKernel([sigma_f, 1], lambda a,b,p : 0, priors = [priors[1],], deriv = None)
+        sigma2_f = params[1]
+        composite_kernel = DistFNKernel([sigma2_f, 1], lambda a,b,p : 0, priors = [priors[1],], deriv = None)
         for (i, (distfn, distfn_deriv_i)) in enumerate(extra):
             si = i+2
             kparams = params[si:si+1]

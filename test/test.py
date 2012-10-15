@@ -61,6 +61,8 @@ class TestSimple(unittest.TestCase):
         priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)]
         best_params, v = learn.learn_hyperparams(self.X, self.y, "se", start_kernel_params = self.start_params, kernel_priors=priors)
 
+        print best_params
+
     def test_plot(self):
         plot.predict_1d(self.gp, x_min = -5.0, x_max = 5.0)
 
