@@ -101,7 +101,6 @@ class GaussianProcess:
         """
         Predict the posterior mean, at a set of points given by the rows of X1.
         """
-
         K = self.kernel(self.X, X1)
         return self.mu + np.dot(K.T, self.alpha)
 
@@ -202,8 +201,7 @@ class GaussianProcess:
         #TODO: Use 'marshal' module or inspect.getsource() to serialize the entire kernel including possible outside functions.
 
 
-    def load_trained_model(self, filename):
-        npzfile = np.load(filename)
+    def unpack_npz(self, npzfile):
         self.X = npzfile['X']
         self.y = npzfile['y']
         self.mu = npzfile['mu'][0]
@@ -215,6 +213,14 @@ class GaussianProcess:
         self.Kinv = npzfile['Kinv']
         self.L = npzfile['L']
         self.K = npzfile['K']
+
+
+    def load_trained_model(self, filename):
+        npzfile = np.load(filename)
+        self.unpack_npz(npzfile)
+        del npzfile.f
+        npzfile.close()
+
 
         self.n = self.X.shape[0]
         self.kernel = kernels.setup_kernel(self.kernel_name, self.kernel_params, extra=None)
