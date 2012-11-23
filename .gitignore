@@ -1,0 +1,6 @@
+*.pyc
+*.png
+*~
+build*
+*/#*#
+*DS_Store
