@@ -214,7 +214,7 @@ class DistFNKernel(Kernel):
 
         D = gen_pairwise_matrix(self.distfn, X1, X2)
         try:
-            d = np.exp(-1 * D**2 / self.w**2)
+            d = self.sigma2_f * np.exp(-1 * D**2 / self.w**2)
         except AttributeError:
             import pdb
             pdb.set_trace()
