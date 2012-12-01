@@ -56,14 +56,14 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
 
         print "optimizing params", kernel_params, "ll", -1 *nll, "grad", ngrad
 
-    except np.linalg.linalg.LinAlgError:
-        print "warning: lin alg error in likelihood computation (%f, %f), returning inf" % (nll, npll)
+    except np.linalg.linalg.LinAlgError as e:
+        print "warning: lin alg error (%s) in likelihood computation, returning inf" % str(e)
         nll = np.float("inf")
         ngrad = np.zeros(kernel_params.shape)
 
     return nll, ngrad
 
-def learn_hyperparams(X, y, kernel, start_kernel_params, kernel_extra=None, kernel_priors=None):
+def learn_hyperparams(X, y, kernel, start_kernel_params, kernel_extra=None, kernel_priors=None, random_starts=0):
     """
     Use L-BFGS to search for the maximum likelihood kernel hyperparams.
     """
@@ -76,7 +76,7 @@ def learn_hyperparams(X, y, kernel, start_kernel_params, kernel_extra=None, kern
 
     skp = np.asarray(start_kernel_params)
     new_params = lambda  :  np.exp(np.log(skp) + np.random.randn(len(skp)) * 2)
-    start_param_set = [skp,] + [new_params() for i in range(3)]
+    start_param_set = [skp,] + [new_params() for i in range(random_starts)]
 
     print "start param set"
     print start_param_set
