@@ -41,6 +41,7 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
     matrix once, etc.).
     """
     try:
+        print "optimizing params", kernel_params
         gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, kernel_priors=kernel_priors)
 
         nll = -1 * gp.log_likelihood()
@@ -54,10 +55,15 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
         nll += npll
         ngrad += npgrad
 
-        print "optimizing params", kernel_params, "ll", -1 *nll, "grad", ngrad
+        print "   ...grad", -1*ngrad
+        print "   ...ll", -1 *nll, 
 
     except np.linalg.linalg.LinAlgError as e:
-        print "warning: lin alg error (%s) in likelihood computation, returning inf" % str(e)
+        print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)
+        nll = np.float("inf")
+        ngrad = np.zeros(kernel_params.shape)
+    except ValueError as e:
+        print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
         nll = np.float("inf")
         ngrad = np.zeros(kernel_params.shape)
 
