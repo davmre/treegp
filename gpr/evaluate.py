@@ -1,5 +1,6 @@
 import numpy as np
 
+import kernels
 from gp import GaussianProcess
 
 def sq_loss(y1, y2):
@@ -58,11 +59,12 @@ def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, lo
 
     # compute the loss obtained by both training and testing on the entire dataset. this is obviously illegitimate.
     if train_loss or (K is None):
+        k = kernels.setup_kernel(kernel, np.asarray(kernel_params), kernel_extra, priors=None)
+        K = k(X,X)
         gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K, inv=False)
         predictions = gp.predict(X)
         tl = loss_fn(predictions, y)
         print "train pred mean", np.mean(predictions), "true mean", np.mean(y)
-        K = gp.K
 
     kfold_predictions = np.zeros((n,))
 

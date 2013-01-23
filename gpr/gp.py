@@ -45,31 +45,29 @@ class GaussianProcess:
 
             # train model
             if K is None:
-                self.K = self.kernel(X, X)
-            else:
-                self.K = K
+                K = self.kernel(X, X)
 
             self.L = None
             self.alpha = None
             self.Kinv = None
             try:
-                self.L = scipy.linalg.cholesky(self.K, lower=True)
+                self.L = scipy.linalg.cholesky(K, lower=True)
                 self.alpha = scipy.linalg.cho_solve((self.L, True), self.y)
             except np.linalg.linalg.LinAlgError:
+                #u,v = np.linalg.eig(K)
+                #print K, u
                 raise
-
-#                     u,v = np.linalg.eig(self.K)
-#                     print self.K, u
-
-#                     import pdb
-#                     pdb.set_trace()
-#                     sys.exit(1)
             except ValueError:
                 raise
 
-#                import pdb
-#                pdb.set_trace()
-#                self.K = self.kernel(X, X)
+            # precompute training set log likelihood, so we don't need
+            # to keep L around.
+            # to compute log(det(K)), we use the trick that the
+            # determinant of a symmetric pos. def. matrix is the
+            # product of squares of the diagonal elements of the
+            # Cholesky factor
+            ld2 = np.log(np.diag(self.L)).sum()
+            self.ll =  -.5 * (np.dot(self.y.T, self.alpha) + self.n * np.log(2*np.pi)) - ld2
 
             if inv:
                 self.__invert_kernel_matrix()
@@ -78,6 +76,7 @@ class GaussianProcess:
         if self.Kinv is None and self.L is not None:
             invL = scipy.linalg.inv(self.L)
             self.Kinv = np.dot(invL.T, invL)
+            self.L = None # no need to keep this around anymore
 
     def sample(self, X1):
         """
@@ -113,8 +112,8 @@ class GaussianProcess:
         K = self.kernel(self.X, X1)
         return self.kernel(X1,X1) - np.dot(K.T, np.dot(self.Kinv, K))
 
-    def variance(self, X1):
-        return np.diag(self.covariance(X1))
+    def variance(self, X1, with_obs_noise=True):
+        return np.diag(self.covariance(X1)) + self.kernel_params[0]
 
     def posterior_log_likelihood(self, X1, y):
         """
@@ -136,11 +135,6 @@ class GaussianProcess:
             var = K[0,0]
             ll1 = - .5 * ((y)**2 / var + np.log(2*np.pi*var) )
 
-        if K[0,0] < 0:
-            import pdb
-            pdb.set_trace()
-
-
         L = scipy.linalg.cholesky(K, lower=True)
         ld2 = np.log(np.diag(L)).sum()
         alpha = scipy.linalg.cho_solve((L, True), y)
@@ -153,16 +147,7 @@ class GaussianProcess:
         Likelihood of the training data under the prior distribution. (this is primarily determined by the covariance kernel and its hyperparameters)
         """
 
-        self.__invert_kernel_matrix()
-
-        # the determinant of a symmetric pos. def. matrix is the product of squares of the diagonal elements of the Cholesky factor
-        ld2 = np.log(np.diag(self.L)).sum()
-        ll =  -.5 * (np.dot(self.y.T, self.alpha) + self.n * np.log(2*np.pi)) - ld2
-#        print "params", self.kernel_params
-
-#        print "returning ll %f = -.5 * (%f + %f + %f)" % (ll, np.dot(self.y.T, self.alpha), ld, self.n * np.log(2*np.pi))
-
-        return ll
+        return self.ll
 
     def log_likelihood_gradient(self):
         """
@@ -196,10 +181,9 @@ class GaussianProcess:
 
         kname = np.array((self.kernel_name,))
         mname = np.array((self.mean,))
-        np.savez(filename, X = self.X, y=self.y, mu = np.array((self.mu,)), kernel_name=kname, kernel_params=self.kernel_params, mname = mname, alpha=self.alpha, Kinv=self.Kinv, K=self.K, L=self.L)
+        np.savez(filename, X = self.X, y=self.y, mu = np.array((self.mu,)), kernel_name=kname, kernel_params=self.kernel_params, mname = mname, alpha=self.alpha, Kinv=self.Kinv, L=self.L)
 
         #TODO: Use 'marshal' module or inspect.getsource() to serialize the entire kernel including possible outside functions.
-
 
     def unpack_npz(self, npzfile):
         self.X = npzfile['X']
@@ -212,15 +196,12 @@ class GaussianProcess:
         self.alpha = npzfile['alpha']
         self.Kinv = npzfile['Kinv']
         self.L = npzfile['L']
-        self.K = npzfile['K']
-
 
     def load_trained_model(self, filename):
         npzfile = np.load(filename)
         self.unpack_npz(npzfile)
         del npzfile.f
         npzfile.close()
-
 
         self.n = self.X.shape[0]
         self.kernel = kernels.setup_kernel(self.kernel_name, self.kernel_params, extra=None)

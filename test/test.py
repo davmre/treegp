@@ -73,8 +73,11 @@ class TestSimple(unittest.TestCase):
 
         pts = np.linspace(-5, 5, 20)
         p1 = gp1.predict(pts)
+        v1 = gp1.variance(pts)
         p2 = gp2.predict(pts)
+        v2 = gp2.variance(pts)
         self.assertTrue((p1 == p2).all())
+        self.assertTrue((v1 == v2).all())
 
     def tearDown(self):
         try:
