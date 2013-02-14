@@ -181,7 +181,7 @@ class GaussianProcess:
 
         kname = np.array((self.kernel_name,))
         mname = np.array((self.mean,))
-        np.savez(filename, X = self.X, y=self.y, mu = np.array((self.mu,)), kernel_name=kname, kernel_params=self.kernel_params, mname = mname, alpha=self.alpha, Kinv=self.Kinv, L=self.L)
+        np.savez(filename, X = self.X, y=self.y, mu = np.array((self.mu,)), kernel_name=kname, kernel_params=self.kernel_params, mname = mname, alpha=self.alpha, Kinv=self.Kinv, L=self.L, ll=self.ll)
 
         #TODO: Use 'marshal' module or inspect.getsource() to serialize the entire kernel including possible outside functions.
 
@@ -196,6 +196,7 @@ class GaussianProcess:
         self.alpha = npzfile['alpha']
         self.Kinv = npzfile['Kinv']
         self.L = npzfile['L']
+        self.ll = npzfile['ll']
 
     def load_trained_model(self, filename):
         npzfile = np.load(filename)
