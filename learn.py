@@ -56,7 +56,7 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
         ngrad += npgrad
 
         print "   ...grad", -1*ngrad
-        print "   ...ll", -1 *nll, 
+        print "   ...ll", -1 *nll,
 
     except np.linalg.linalg.LinAlgError as e:
         print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)

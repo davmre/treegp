@@ -228,15 +228,17 @@ class DistFNKernel(Kernel):
             print "warning: invalid kernel parameter, returning 0 matrix:", self.w, self.sigma2_f
             return np.zeros((X1.shape[0], X1.shape[0]))
 
+        # import pdb; pdb.set_trace()
+
         if i==0 and len(self.params) > 1:
             # deriv wrt sigma2_f
             dK = np.exp(-1 * D**2 / self.w**2)
         elif i == 1 or len(self.params) == 1:
             # deriv wrt w
-            dK = self.sigma2_f * np.exp(-1*D**2 / self.w**2) * D**2 / (self.w**3)
+            dK = self.sigma2_f * np.exp(-1*D**2 / self.w**2) * 2 * D**2 / (self.w**3)
         elif i > 1:
             dD = gen_pairwise_matrix(lambda x1, x2 : self.distfn_deriv_i(i-2, x1, x2), X1, X2)
-            dK = -self.sigma2_f * np.exp(-1*D**2 / self.w**2) * D / (self.w**2) * dD
+            dK = -self.sigma2_f * np.exp(-1*D**2 / self.w**2) * 2 * D / (self.w**2) * dD
         else:
             raise RuntimeError("Unknown parameter index %d (out of %d) for DistFNKernel." % (i, self.nparams))
 
@@ -286,12 +288,11 @@ class SEKernelIso(SEKernel):
 class DiagonalKernel(Kernel):
     """
     Kernel given by k(x1,x2)=s^2 if x1==x2, otherwise =0. Takes a
-    single parameter, s.
+    single parameter, s^2.
     """
     def __init__(self, params, priors=None):
         super(DiagonalKernel, self).__init__(params, priors)
         self.s2 = self.params[0]
-        self.s = np.sqrt(self.s2)
 
     def __call__(self, X1, X2):
         X1, X2 = self._check_args(X1,X2)
@@ -311,9 +312,9 @@ class DiagonalKernel(Kernel):
         else:
             if X1 is X2:
                 (n,d) = X1.shape
-                return 2 * self.s * np.eye(n)
+                return np.eye(n)
             else:
-                f = lambda x1, x2: 2*self.s if almost_equal(x1,x2) else 0
+                f = lambda x1, x2: 1 if almost_equal(x1,x2) else 0
                 return gen_pairwise_matrix(f, X1, X2)
 
 def setup_kernel(name, params, extra, priors=None):

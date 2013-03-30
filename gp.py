@@ -136,9 +136,9 @@ class GaussianProcess:
             ll1 = - .5 * ((y)**2 / var + np.log(2*np.pi*var) )
 
         L = scipy.linalg.cholesky(K, lower=True)
-        ld2 = np.log(np.diag(L)).sum()
+        ld2 = np.log(np.diag(L)).sum() # this computes .5 * log(det(K))
         alpha = scipy.linalg.cho_solve((L, True), y)
-        ll =  -.5 * (np.dot(y.T, alpha) + n * np.log(2*np.pi)) - ld2
+        ll =  -.5 * ( np.dot(y.T, alpha) + n * np.log(2*np.pi)) - ld2
         return ll
 
 
@@ -161,17 +161,20 @@ class GaussianProcess:
         for i,p in enumerate(self.kernel_params):
 
             dKdi = self.kernel.derivative_wrt_i(i, self.X, self.X)
-#            print "deriv wrt %d is" % (i), dKdi
             dlldi = .5 * np.dot(self.alpha.T, np.dot(dKdi, self.alpha))
-#            dlldi1 = dlldi
+
+            # here we use the fact:
+            # trace(AB) = sum_{ij} A_ij * B_ij
             dlldi -= .5 * np.sum(np.sum(self.Kinv.T * dKdi))
+
+
 #            print "dlldi is %f = .5 * %f - .5 * %f" % (dlldi, dlldi1*2, (dlldi1-dlldi)*2)
 #            print "norm2 alpha is %f" % (np.dot(self.alpha,  self.alpha))
 #            alt = .5 * np.dot(self.y.T, np.dot(self.Kinv, np.dot(dKdi, np.dot(self.Kinv, self.y))))
 #            print "alt is %f" % (alt)
 
             grad[i] = dlldi
-#        print self.kernel_params, "returning grad", grad
+ #       print self.kernel_params, "returning grad", grad
         return grad
 
     def save_trained_model(self, filename):

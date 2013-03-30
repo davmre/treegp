@@ -4,7 +4,9 @@ import numpy as np
 
 from gpr import munge, kernels, evaluate, learn, distributions, plot
 from gpr.gp import GaussianProcess
+from gpr.distributions import InvGamma, LogNormal
 
+"""
 class TestAbalone(unittest.TestCase):
 
     def setUp(self):
@@ -23,7 +25,7 @@ class TestAbalone(unittest.TestCase):
 
         self.X = X
         self.y = y
-
+"""
 
 class TestSimple(unittest.TestCase):
 
@@ -57,11 +59,53 @@ class TestSimple(unittest.TestCase):
         loss = evaluate.test_kfold(self.X, self.y, folds=5, kernel="se_iso", kernel_params=(0.1, 1, 22.0))
 
     def test_learn_hyperparams(self):
-        from gpr.distributions import InvGamma, LogNormal
         priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)]
         best_params, v = learn.learn_hyperparams(self.X, self.y, "se", start_kernel_params = self.start_params, kernel_priors=priors)
 
         print best_params
+
+    def test_SE_gradient(self):
+
+        kernel = "se"
+        grad = learn.gp_grad(X=self.X, y=self.y, kernel=kernel, kernel_params=self.start_params, kernel_extra=None)
+
+        n = len(self.start_params)
+        kp  = self.start_params
+        eps = 1e-4
+        empirical_grad = np.zeros(n)
+        for i in range(n):
+            kp[i] -= eps
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=kernel, kernel_params=kp)
+            l1 = gp.log_likelihood()
+            kp[i] += 2*eps
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=kernel, kernel_params=kp)
+            l2 = gp.log_likelihood()
+            kp[i] -= eps
+            empirical_grad[i] = (l2 - l1)/ (2*eps)
+
+        self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
+
+    def test_prior_gradient(self):
+        kernel = "se"
+
+        k = kernels.setup_kernel(name=kernel, params=self.start_params, extra=None, priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)])
+        pgrad = k.param_prior_grad()
+
+        n = len(self.start_params)
+        kp  = self.start_params
+        eps = 1e-4
+        empirical_pgrad = np.zeros(n)
+        for i in range(n):
+            kp[i] -= eps
+            k = kernels.setup_kernel(name=kernel, params=kp, extra=None, priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)])
+            l1 = k.param_prior_ll()
+            kp[i] += 2*eps
+            k = kernels.setup_kernel(name=kernel, params=kp, extra=None, priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)])
+            l2 = k.param_prior_ll()
+            kp[i] -= eps
+            empirical_pgrad[i] = (l2 - l1)/ (2*eps)
+
+        self.assertTrue( (np.abs(pgrad - empirical_pgrad) < 0.01 ).all() )
 
     def test_plot(self):
         plot.predict_1d(self.gp, x_min = -5.0, x_max = 5.0)
