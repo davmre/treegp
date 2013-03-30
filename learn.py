@@ -41,7 +41,7 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
     matrix once, etc.).
     """
     try:
-        print "optimizing params", kernel_params
+#        print "optimizing params", kernel_params
         gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, kernel_priors=kernel_priors)
 
         nll = -1 * gp.log_likelihood()
@@ -55,8 +55,8 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
         nll += npll
         ngrad += npgrad
 
-        print "   ...grad", -1*ngrad
-        print "   ...ll", -1 *nll,
+#        print "   ...grad", -1*ngrad
+#        print "   ...ll", -1 *nll,
 
     except np.linalg.linalg.LinAlgError as e:
         print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)
@@ -94,7 +94,7 @@ def learn_hyperparams(X, y, kernel, start_kernel_params, kernel_extra=None, kern
     for params in start_param_set:
 
 #    best_params, v, d = scipy.optimize.fmin_l_bfgs_b(func=llgrad, x0=start_kernel_params, bounds= [(1e-20, None),]*len(start_kernel_params))
-        opt_params, v, d = scipy.optimize.fmin_l_bfgs_b(func=llgrad, x0=start_kernel_params, bounds= [(1e-20, None),]*len(start_kernel_params))
+        opt_params, v, d = scipy.optimize.fmin_l_bfgs_b(func=llgrad, x0=start_kernel_params, bounds= [(1e-20, None),]*len(start_kernel_params), factr=1e12)
 
         if v < best_cost:
             best_cost = v
