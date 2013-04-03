@@ -210,7 +210,7 @@ class DistFNKernel(Kernel):
 
         if self.w == 0 or self.sigma2_f ==0:
             print "warning: invalid kernel parameter, returning 0", self.w, self.sigma2_f
-            return np.zeros((X1.shape[0], X1.shape[0]))
+            return np.zeros((X1.shape[0], X2.shape[0]))
 
         D = gen_pairwise_matrix(self.distfn, X1, X2)
         try:
@@ -226,7 +226,7 @@ class DistFNKernel(Kernel):
 
         if self.w == 0 or self.sigma2_f ==0:
             print "warning: invalid kernel parameter, returning 0 matrix:", self.w, self.sigma2_f
-            return np.zeros((X1.shape[0], X1.shape[0]))
+            return np.zeros((X1.shape[0], X2.shape[0]))
 
         # import pdb; pdb.set_trace()
 
@@ -424,5 +424,3 @@ def setup_kernel(name, params, extra, priors=None):
     else:
         raise RuntimeError("unrecognized kernel name %s." % (name))
     return k
-
-
