@@ -2,6 +2,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 import sys
+import hashlib
 import itertools, pickle, traceback
 
 import numpy as np
@@ -78,6 +79,23 @@ class GaussianProcess:
             self.Kinv = np.dot(invL.T, invL)
             self.L = None # no need to keep this around anymore
 
+    def get_query_K(self, X1):
+        # avoid recomputing the kernel if we're evaluating at the same
+        # point multiple times. This is effectively a size-1 cache.
+        try:
+            self.query_hsh
+        except AttributeError:
+            self.query_hsh = None
+
+        hsh = hashlib.sha1(X1.view(np.uint8)).hexdigest()
+        if hsh != self.query_hsh:
+            self.query_K = self.kernel(self.X, X1)
+            self.query_hsh = hsh
+            #print "cache fail: model %d called with " % (len(self.alpha)), X1
+        #else:
+            #print "cache hit!"
+        return self.query_K
+
     def sample(self, X1):
         """
         Sample from the GP posterior at a set of points given by the rows of X1.
@@ -100,7 +118,7 @@ class GaussianProcess:
         """
         Predict the posterior mean, at a set of points given by the rows of X1.
         """
-        K = self.kernel(self.X, X1)
+        K = self.get_query_K(X1)
         return self.mu + np.dot(K.T, self.alpha)
 
     def covariance(self, X1):
@@ -109,7 +127,7 @@ class GaussianProcess:
         """
 
         self.__invert_kernel_matrix()
-        K = self.kernel(self.X, X1)
+        K = self.get_query_K(X1)
         return self.kernel(X1,X1) - np.dot(K.T, np.dot(self.Kinv, K))
 
     def variance(self, X1, with_obs_noise=True):
@@ -228,4 +246,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
