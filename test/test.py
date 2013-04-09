@@ -129,5 +129,96 @@ class TestSimple(unittest.TestCase):
         except OSError:
             pass
 
+
+class TestSemiParametric(unittest.TestCase):
+
+
+    def setUp(self):
+
+        N = 100
+        x = np.linspace(-5,5,N)
+        self.X = np.reshape(x, (-1, 1))
+        H = np.vstack([x**3, x**2, x, np.ones(N)]) # basis functions for a cubic regression
+        self.beta = [9.91898792e-01,  -1.62113090e+00,   3.15437605e+00,   1.25732838e+00]
+        self.B = np.eye(4) * 9
+        self.b = np.zeros((4,))
+
+        p = np.dot(H.T, self.beta)
+
+        def covar_matrix(x, k):
+            n = len(x)
+            K = np.zeros((n,n))
+            for i in range(n):
+                for j in range(n):
+                    K[i,j] = k(x[i], x[j])
+            return K
+        k1 = lambda x1, x2 : .001*np.exp( - ((x1-x2)/.01)**2 ) + (.001 if x1==x2 else 0)
+        K1 = covar_matrix(x, k1)
+
+        np.random.seed(0)
+        f1 = np.random.multivariate_normal(mean=np.zeros((len(x),)), cov=K1)
+        self.y1 = f1 + p
+
+        self.basisfns = [lambda x : x**3, lambda x : x**2, lambda x : x, lambda x : 1]
+
+        self.gp = GaussianProcess(X=self.X[::10,:], 
+                              y=self.y1[::10], 
+                              kernel="se", 
+                              kernel_params=np.array((.001, .01, .001)), 
+                              mean="parametric", 
+                              basisfns=self.basisfns, 
+                              param_mean=self.b, 
+                              param_cov=self.B,
+                             compute_grad=True)
+
+
+    def test_param_recovery(self):
+
+
+        gp = self.gp
+        inferred_beta = gp.param_predict()
+        self.assertTrue( ( np.abs(inferred_beta - self.beta) < .1 ).all() )
+
+        # make sure the posterior covariance matrix is reasonable
+        posterior_covar = gp.param_covariance()
+        self.assertTrue( np.max(posterior_covar.flatten()) < 1e-2 )
+
+        # we should have the most uncertainty about the low-order
+        # params (e.g. the constant term), and the least uncertainty
+        # about the high-order terms, since a small change in a high-
+        # order term has a larger effect on the resulting function.
+        posterior_var = np.diag(posterior_covar)
+        self.assertTrue( posterior_var[3] > posterior_var[2] )
+        self.assertTrue( posterior_var[2] > posterior_var[1] )
+        self.assertTrue( posterior_var[1] > posterior_var[0] )
+
+
+    def test_likelihood(self):
+
+        # in the limit of a prior forcing the parameters to be zero,
+        # the semiparametric likelihood should match that of a
+        # standard GP.
+
+        gp = self.gp
+
+        gp_smallparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(4) * 0.0000000000001, compute_grad=False)
+        gp_noparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .001)), mean="zero", compute_grad=False)
+
+        self.assertGreater(self.gp.ll, gp_smallparam.ll)
+        self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=-1)
+
+    def test_gradient(self):
+        gp = self.gp
+        gp_grad0 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.0011, .01, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        gp_grad1 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .0101, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        gp_grad2 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .0011)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+
+        empirical_llgrad = [(gp_grad0.ll - gp.ll) / .0001,
+                            (gp_grad1.ll - gp.ll) / .0001, 
+                            (gp_grad2.ll - gp.ll) / .0001]
+
+        self.assertTrue( ( np.abs(empirical_llgrad - gp.ll_grad) < 1 ).all() )
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -9,7 +9,7 @@ def gen_pairwise_matrix(f, X1, X2):
     n1 = X1.shape[0]
     n2 = X2.shape[0]
     K = np.zeros((n1,n2))
-    if X1 is X2:
+    if X1 is X2 or (X1==X2).all():
         for i in range(n1):
             for j in range(i, n2):
                 K[i, j] = f(X1[i,:], X2[j,:])
@@ -60,10 +60,10 @@ class Kernel(object):
         """
         return SumKernel(self, k_rhs)
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         raise RuntimeError( "Needs to be implemented in base class" )
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         raise RuntimeError( "Needs to be implemented in base class" )
 
     def param_prior_ll(self):
@@ -79,14 +79,14 @@ class SumKernel(Kernel):
         self.nparams = lhs.nparams + rhs.nparams
         self.param_split = lhs.nparams
 
-    def __call__(self, X1, X2):
-        return self.lhs(X1, X2)+self.rhs(X1, X2)
+    def __call__(self, X1, X2, identical=False):
+        return self.lhs(X1, X2, identical=identical)+self.rhs(X1, X2, identical=identical)
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         if i < self.lhs.nparams:
-            return self.lhs.derivative_wrt_i(i, X1, X2)
+            return self.lhs.derivative_wrt_i(i, X1, X2, identical=identical)
         else:
-            return self.rhs.derivative_wrt_i(i-self.lhs.nparams, X1,X2)
+            return self.rhs.derivative_wrt_i(i-self.lhs.nparams, X1,X2, identical=identical)
 
     def param_prior_ll(self):
         return self.lhs.param_prior_ll() + self.rhs.param_prior_ll()
@@ -102,10 +102,10 @@ class ProductKernel(Kernel):
         self.nparams = lhs.nparams + rhs.nparams
         self.param_split = lhs.nparams
 
-    def __call__(self, X1, X2):
-        return self.lhs(X1, X2)*self.rhs(X1, X2)
+    def __call__(self, X1, X2, identical=False):
+        return self.lhs(X1, X2, identical=identical)*self.rhs(X1, X2, identical=identical)
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         if i < self.lhs.nparams:
             return self.lhs.derivative_wrt_i(i, X1, X2) * self.rhs(X1,X2)
         else:
@@ -124,10 +124,10 @@ class LinearKernel(Kernel):
     def __init__(self, params=None, priors=None):
         super(LinearKernel, self).__init__(params, priors)
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         return np.dot(X1, X2.T)
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         (n,d) = X1.shape
         (m,d) = X2.shape
         return np.zeros((n,m))
@@ -144,6 +144,7 @@ class SEKernel(Kernel):
         super(SEKernel, self).__init__(params, priors)
         self.sigma2_f = params[0]
         self.ws = params[1:]
+        assert( len(self.ws) > 0 )
         self.iws = 1/self.ws
         self.Winv = 1/np.diag(self.ws)
         self.Winv2 = self.Winv*self.Winv
@@ -167,13 +168,13 @@ class SEKernel(Kernel):
         sqi = (iX1 - iX2)**2
         return sqi
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         wsd = self._sqdistances(X1 * self.iws, X2 * self.iws)
         K = self.sigma2_f * np.exp(-.5 * wsd)
         return K
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         wsd = self._sqdistances(X1*self.iws, X2*self.iws)
         if i==0:
@@ -205,7 +206,7 @@ class DistFNKernel(Kernel):
         self.distfn = lambda a,b: distfn(a,b,self.df_params)
         self.distfn_deriv_i = None if deriv is None else lambda i, a, b: deriv(i, a, b, self.df_params)
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
 
         if self.w == 0 or self.sigma2_f ==0:
@@ -220,7 +221,7 @@ class DistFNKernel(Kernel):
             pdb.set_trace()
         return d
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         D = gen_pairwise_matrix(self.distfn, X1, X2)
 
@@ -267,12 +268,12 @@ class SEKernelIso(SEKernel):
         self.Winv = np.diag(1.0/self.ws)
         self.Winv2 = self.Winv * self.Winv
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         self.init_ws(X1.shape[1])
         return super(SEKernelIso, self).__call__(X1, X2)
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         w = self.w
         if i==0:
@@ -288,16 +289,17 @@ class SEKernelIso(SEKernel):
 class DiagonalKernel(Kernel):
     """
     Kernel given by k(x1,x2)=s^2 if x1==x2, otherwise =0. Takes a
-    single parameter, s^2.
+    single parameter, s^2. 
     """
     def __init__(self, params, priors=None):
         super(DiagonalKernel, self).__init__(params, priors)
         self.s2 = self.params[0]
 
-    def __call__(self, X1, X2):
+    def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         (n,d) = X1.shape
-        if X1 is X2:
+        if identical:
+            assert( X1.shape == X2.shape )
             return self.s2 * np.eye(n)
         else:
             (m,d) = X2.shape
@@ -305,17 +307,17 @@ class DiagonalKernel(Kernel):
 #            f = lambda x1, x2: self.s2 if x1==x2 else 0
 #            return gen_pairwise_matrix(f, X1, X2)
 
-    def derivative_wrt_i(self, i, X1, X2):
+    def derivative_wrt_i(self, i, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
         if i != 0:
             raise RuntimeError("Unknown parameter index %d for DiagonalKernel." % (i))
         else:
-            if X1 is X2:
-                (n,d) = X1.shape
+            (n,d) = X1.shape
+            if identical:
                 return np.eye(n)
             else:
-                f = lambda x1, x2: 1 if almost_equal(x1,x2) else 0
-                return gen_pairwise_matrix(f, X1, X2)
+                (m,d) = X2.shape
+                return np.zeros((n,m))
 
 def setup_kernel(name, params, extra, priors=None):
     """
