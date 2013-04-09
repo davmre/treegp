@@ -83,6 +83,8 @@ class TestSimple(unittest.TestCase):
             kp[i] -= eps
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
+        print grad
+        print empirical_grad
         self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
 
     def test_prior_gradient(self):

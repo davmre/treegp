@@ -27,8 +27,8 @@ def gp_grad(X, y, kernel, kernel_params, kernel_extra):
     """
 
     try:
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra)
-        grad = gp.log_likelihood_gradient()
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, compute_grad=True)
+        grad = gp.ll_grad
     except:
         grad = np.zeros(kernel_params.shape)
     return grad
@@ -42,10 +42,10 @@ def gp_nll_ngrad(X, y, kernel, kernel_params, kernel_extra, kernel_priors):
     """
     try:
 #        print "optimizing params", kernel_params
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, kernel_priors=kernel_priors)
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, kernel_priors=kernel_priors, compute_grad=True)
 
         nll = -1 * gp.log_likelihood()
-        ngrad = -1 * gp.log_likelihood_gradient()
+        ngrad = -1 * gp.ll_grad
 
         npll = -1 * gp.kernel.param_prior_ll()
         npgrad = -1 * gp.kernel.param_prior_grad()

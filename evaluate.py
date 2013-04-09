@@ -61,7 +61,7 @@ def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, lo
     if train_loss or (K is None):
         k = kernels.setup_kernel(kernel, np.asarray(kernel_params), kernel_extra, priors=None)
         K = k(X,X)
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K, inv=False)
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K)
         predictions = gp.predict(X)
         tl = loss_fn(predictions, y)
         print "train pred mean", np.mean(predictions), "true mean", np.mean(y)
@@ -79,7 +79,7 @@ def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, lo
         test = np.arange(foldstart, foldend, dtype=np.uint)
 
         # train the GP and evaluate its predictions
-        gp = GaussianProcess(X=X[train, :], y=y[train,:], kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K[train, :][:, train], inv=False)
+        gp = GaussianProcess(X=X[train, :], y=y[train,:], kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K[train, :][:, train])
         predictions = gp.predict(X[test,:])
         kfold_predictions[foldstart:foldend] = predictions
         loss += loss_fn(predictions, y[test])

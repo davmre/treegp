@@ -327,7 +327,7 @@ class GaussianProcess:
         if not self.basisfns:
 
             for i,p in enumerate(self.kernel_params):
-                dKdi = self.kernel.derivative_wrt_i(i, self.X, self.X)
+                dKdi = self.kernel.derivative_wrt_i(i, self.X, self.X, identical=True)
                 dlldi = .5 * np.dot(self.alpha.T, np.dot(dKdi, self.alpha))
 
                 # here we use the fact:
@@ -376,7 +376,7 @@ class GaussianProcess:
                           'basisfns': np.array([marshal_fn(f) for f in self.basisfns], dtype=object),
                           }
         else:
-            param_info = {basisfns: None}
+            param_info = {'basisfns': None}
         np.savez(filename, 
                  X = self.X, 
                  y=self.y, 
@@ -400,7 +400,7 @@ class GaussianProcess:
         self.invL = npzfile['invL']
         self.ll = npzfile['ll']
         self.basisfns = npzfile['basisfns']
-        if self.basisfns is not None:
+        if self.basisfns:
             self.beta_bar = npzfile['beta_bar']
             self.c = npzfile['c']
             self.invc = npzfile['invc']
