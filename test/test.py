@@ -46,7 +46,10 @@ class TestSimple(unittest.TestCase):
                  ] )
 
         self.start_params = np.array((.2, 1, 1))
-        self.gp = GaussianProcess(self.X, self.y, kernel = "se", kernel_params = self.start_params)
+
+        priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)]
+        self.k = kernels.setup_kernel(name="se", params = self.start_params, priors=priors)
+        self.gp = GaussianProcess(self.X, self.y, kernel = self.k)
 
     def test_pred(self):
         #quantiles = munge.distance_quantiles(self.nX)
@@ -56,18 +59,15 @@ class TestSimple(unittest.TestCase):
         ll = self.gp.posterior_log_likelihood(self.X[0, :], self.y[0])
 
     def test_cv_eval(self):
-        loss = evaluate.test_kfold(self.X, self.y, folds=5, kernel="se_iso", kernel_params=(0.1, 1, 22.0))
+        k_iso = kernels.setup_kernel(name="se_iso", params = (0.1, 1, 22.0))
+        loss = evaluate.test_kfold(self.X, self.y, folds=5, kernel=k_iso)
 
     def test_learn_hyperparams(self):
-        priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)]
-        best_params, v = learn.learn_hyperparams(self.X, self.y, "se", start_kernel_params = self.start_params, kernel_priors=priors)
-
+        best_params, v = learn.learn_hyperparams(self.X, self.y, kernel=self.k, start_kernel_params = self.start_params)
         print best_params
 
     def test_SE_gradient(self):
-
-        kernel = "se"
-        grad = learn.gp_grad(X=self.X, y=self.y, kernel=kernel, kernel_params=self.start_params, kernel_extra=None)
+        grad = learn.gp_grad(X=self.X, y=self.y, kernel=self.k, kernel_params=self.start_params)
 
         n = len(self.start_params)
         kp  = self.start_params
@@ -75,12 +75,15 @@ class TestSimple(unittest.TestCase):
         empirical_grad = np.zeros(n)
         for i in range(n):
             kp[i] -= eps
-            gp = GaussianProcess(X=self.X, y=self.y, kernel=kernel, kernel_params=kp)
+            self.k.set_params(kp)
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k)
             l1 = gp.log_likelihood()
             kp[i] += 2*eps
-            gp = GaussianProcess(X=self.X, y=self.y, kernel=kernel, kernel_params=kp)
+            self.k.set_params(kp)
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k)
             l2 = gp.log_likelihood()
             kp[i] -= eps
+            self.k.set_params(kp)
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
         print grad
@@ -89,7 +92,6 @@ class TestSimple(unittest.TestCase):
 
     def test_prior_gradient(self):
         kernel = "se"
-
         k = kernels.setup_kernel(name=kernel, params=self.start_params, extra=None, priors = [InvGamma(1.0, 1.0), InvGamma(1.0, 1.0), LogNormal(3.0, 2.0)])
         pgrad = k.param_prior_grad()
 
@@ -163,15 +165,16 @@ class TestSemiParametric(unittest.TestCase):
 
         self.basisfns = [lambda x : x**3, lambda x : x**2, lambda x : x, lambda x : 1]
 
-        self.gp = GaussianProcess(X=self.X[::10,:], 
-                              y=self.y1[::10], 
-                              kernel="se", 
-                              kernel_params=np.array((.001, .01, .001)), 
-                              mean="parametric", 
-                              basisfns=self.basisfns, 
-                              param_mean=self.b, 
-                              param_cov=self.B,
-                             compute_grad=True)
+
+        self.k = kernels.setup_kernel(name="se", params = np.array((.001, .01, .001)))
+        self.gp = GaussianProcess(X=self.X[::10,:],
+                                  y=self.y1[::10],
+                                  kernel=self.k,
+                                  mean="parametric",
+                                  basisfns=self.basisfns,
+                                  param_mean=self.b,
+                                  param_cov=self.B,
+                                  compute_grad=True)
 
 
     def test_param_recovery(self):
@@ -203,23 +206,40 @@ class TestSemiParametric(unittest.TestCase):
 
         gp = self.gp
 
-        gp_smallparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(4) * 0.0000000000001, compute_grad=False)
-        gp_noparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .001)), mean="zero", compute_grad=False)
+        gp_smallparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(4) * 0.0000000000001, compute_grad=False)
+        gp_noparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="zero", compute_grad=False)
 
         self.assertGreater(self.gp.ll, gp_smallparam.ll)
         self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=-1)
 
     def test_gradient(self):
         gp = self.gp
-        gp_grad0 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.0011, .01, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
-        gp_grad1 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .0101, .001)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
-        gp_grad2 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel="se", kernel_params=np.array((.001, .01, .0011)), mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        k0 = kernels.setup_kernel("se", params=np.array((.0011, .01, .001)))
+        k1 = kernels.setup_kernel("se", params=np.array((.001, .0101, .001)))
+        k2 = kernels.setup_kernel("se", params=np.array((.001, .01, .0011)))
+        gp_grad0 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k0, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        gp_grad1 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k1, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        gp_grad2 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k2, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
 
         empirical_llgrad = [(gp_grad0.ll - gp.ll) / .0001,
-                            (gp_grad1.ll - gp.ll) / .0001, 
+                            (gp_grad1.ll - gp.ll) / .0001,
                             (gp_grad2.ll - gp.ll) / .0001]
 
         self.assertTrue( ( np.abs(empirical_llgrad - gp.ll_grad) < 1 ).all() )
+
+
+    def test_load_save(self):
+        gp1 = self.gp
+        gp1.save_trained_model("test_semi.npz")
+        gp2 = GaussianProcess(fname="test_semi.npz")
+
+        pts = np.linspace(-5, 5, 20)
+        p1 = gp1.predict(pts)
+        v1 = gp1.variance(pts)
+        p2 = gp2.predict(pts)
+        v2 = gp2.variance(pts)
+        self.assertTrue((p1 == p2).all())
+        self.assertTrue((v1 == v2).all())
 
 
 if __name__ == '__main__':

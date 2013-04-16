@@ -1,6 +1,6 @@
 import sys
 import hashlib
-import itertools, pickle, marshal, traceback, types
+import itertools, pickle, traceback
 
 import numpy as np
 import scipy.linalg, scipy.optimize
@@ -8,31 +8,17 @@ import scipy.linalg, scipy.optimize
 import kernels
 from kdtree import KDTree
 
+from util import marshal_fn, unmarshal_fn
+
 def log_det(X):
     w = np.linalg.eigvalsh(X)
     return np.sum(np.log(w))
 
-def marshal_fn(f):
-    if f.func_closure is not None:
-        raise ValueError("function has non-empty closure %s, cannot marshal!" % f.func_closure)
-    s = marshal.dumps(f.func_code)
-    print "dumping", repr(s)
-    return s
-
-def unmarshal_fn(dumped_code):
-    try:
-        f_code = marshal.loads(dumped_code)
-    except:
-        import pdb; pdb.set_trace()
-    f = types.FunctionType(f_code, globals())
-    return f
-
 class GaussianProcess:
 
-    def __init__(self, X=None, y=None, 
-                 kernel="se", kernel_params=(1, 1,), 
-                 kernel_priors = None, kernel_extra = None, K=None, 
-                 mean="constant", fname=None, 
+    def __init__(self, X=None, y=None,
+                 kernel = None, K=None,
+                 mean="constant", fname=None,
                  basisfns=None, param_mean=None, param_cov=None,
                  compute_grad=False):
 
@@ -44,10 +30,7 @@ class GaussianProcess:
         if fname is not None:
             self.load_trained_model(fname)
         else:
-            self.kernel_name = kernel
-            self.kernel_params = np.asarray(kernel_params)
-            self.kernel_priors = kernel_priors
-            self.kernel = kernels.setup_kernel(kernel, kernel_params, kernel_extra, kernel_priors)
+            self.kernel = kernel
             self.X = X
             self.n = X.shape[0]
 
@@ -80,7 +63,7 @@ class GaussianProcess:
             try:
                 L = scipy.linalg.cholesky(K, lower=True)
                 self.alpha = scipy.linalg.cho_solve((L, True), self.y)
-                self.invL = scipy.linalg.inv(L)            
+                self.invL = scipy.linalg.inv(L)
             except np.linalg.linalg.LinAlgError:
                 #u,v = np.linalg.eig(K)
                 #print K, u
@@ -103,7 +86,7 @@ class GaussianProcess:
                 self.c = scipy.linalg.cholesky(M_inv, lower=True) # c = sqrt(inv(B) + H*K^-1*H.T)
 
                 self.beta_bar = scipy.linalg.cho_solve((self.c, True), tmp)
-                self.invc = scipy.linalg.inv(self.c)            
+                self.invc = scipy.linalg.inv(self.c)
                 self.HKinv = np.dot(hl, self.invL)
 
 
@@ -133,13 +116,13 @@ class GaussianProcess:
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha) + self.n * np.log(2*np.pi)) - ld2_K
         else:
 
-            # warning: commented out code (in quotes) is not correct. 
+            # warning: commented out code (in quotes) is not correct.
             # alternate code below is (I think) correct, but might be slower.
 
             """
             # here we follow eqn 2.43 in R&W
             #
-            # let z = H.T*b - y, then we want 
+            # let z = H.T*b - y, then we want
             # .5 * z.T * (K + H.T * B * H)^-1 * z
             # minus some other stuff (dealt with below).
             # by the matrix inv lemma,
@@ -159,10 +142,10 @@ class GaussianProcess:
             tmp3 = np.dot(self.invc, tmp2)
             term2 = np.dot(tmp3.T, tmp3)
 
-            # following eqn 2.43 in R&W, we want to compute 
+            # following eqn 2.43 in R&W, we want to compute
             # log det(K + H.T * B * H). using the matrix inversion
             # lemma, we instead compute
-            # log det(K^-1) + log det(B) + log det(B^-1 + H*K^-1*H.T) 
+            # log det(K^-1) + log det(B) + log det(B^-1 + H*K^-1*H.T)
             ld2_Kinv = np.log(np.diag(self.invL)).sum()
             ld2 =  np.log(np.diag(self.c)).sum() # det( B^-1 - H * K^-1 * H.T )
             ld_B = np.log(np.linalg.det(B))
@@ -172,7 +155,7 @@ class GaussianProcess:
 
             """
 
-            # method 2            
+            # method 2
             sqrt_B = scipy.linalg.cholesky(B, lower=True)
             tmp = np.dot(sqrt_B.T, H)
             K_HBH = K + np.dot(tmp.T, tmp)
@@ -182,7 +165,7 @@ class GaussianProcess:
 
             tmp = np.dot(K_HBH_sqrt_inv, z)
             main_term = np.dot(tmp.T, tmp)
-            
+
             det_term = np.log(np.diag(K_HBH_sqrt)).sum()
 
             self.ll = -.5 * main_term - det_term - .5 * self.n * np.log(2*np.pi)
@@ -249,8 +232,8 @@ class GaussianProcess:
         is True, we instead compute the covariance of y, the observed values.
 
         By default, we add a tiny bit of padding to the diagonal to counteract any potential
-        loss of positive definiteness from numerical issues. Setting pad=0 disables this. 
-        
+        loss of positive definiteness from numerical issues. Setting pad=0 disables this.
+
         """
 
         Kstar = self.get_query_K(X1)
@@ -284,7 +267,7 @@ class GaussianProcess:
         samples = np.random.randn(len(self.beta_bar), n)
         samples = np.reshape(self.beta_bar, (1, -1)) + np.dot(self.invc.T, samples).T
         return samples
-    
+
     def posterior_log_likelihood(self, X1, y):
         """
         The log probability of the observations (X1, y) under the posterior distribution.
@@ -322,11 +305,12 @@ class GaussianProcess:
         Gradient of the training set log likelihood with respect to the kernel hyperparams.
         """
 
-        grad = np.zeros(self.kernel_params.shape)
+        n = self.kernel.nparams
+        grad = np.zeros((n,))
 
         if not self.basisfns:
 
-            for i,p in enumerate(self.kernel_params):
+            for i in range(n):
                 dKdi = self.kernel.derivative_wrt_i(i, self.X, self.X, identical=True)
                 dlldi = .5 * np.dot(self.alpha.T, np.dot(dKdi, self.alpha))
 
@@ -337,7 +321,7 @@ class GaussianProcess:
 
                 grad[i] = dlldi
 
-        else:            
+        else:
             sqrt_B = scipy.linalg.cholesky(B, lower=True)
             tmp = np.dot(sqrt_B.T, H)
             K_HBH = K + np.dot(tmp.T, tmp)
@@ -347,11 +331,11 @@ class GaussianProcess:
 
             alpha_z = np.dot(K_HBH_inv, z)
 
-            for i,p in enumerate(self.kernel_params):
+            for i in range(n):
                 dKdi = self.kernel.derivative_wrt_i(i, self.X, self.X, identical=True)
 
                 dlldi = .5 * np.dot(alpha_z.T, np.dot(dKdi, alpha_z))
-                
+
                 # here we use the fact:
                 # trace(AB) = sum_{ij} A_ij * B_ij
                 dlldi -= .5 * np.sum(np.sum(K_HBH_inv.T * dKdi))
@@ -360,14 +344,9 @@ class GaussianProcess:
 
         return grad
 
-    def save_trained_model(self, filename):
-        """
-        Serialize the model to a file.
-        """
 
-        kname = np.array((self.kernel_name,))
-
-
+    def pack_npz(self):
+        d = {}
         if self.basisfns:
             param_info = {'c': self.c,
                           'beta_bar': self.beta_bar,
@@ -377,30 +356,34 @@ class GaussianProcess:
                           }
         else:
             param_info = {'basisfns': None}
-        np.savez(filename, 
-                 X = self.X, 
-                 y=self.y, 
-                 mu = np.array((self.mu,)), 
-                 kernel_name=kname, 
-                 kernel_params=self.kernel_params, 
-                 alpha=self.alpha, 
-                 invL=self.invL, 
-                 ll=self.ll,
-                 **param_info
-                 )
+        d.update(param_info)
+        d['X']  = self.X,
+        d['y'] =self.y,
+        d['mu']  = np.array((self.mu,)),
+        d['kernel'] =self.kernel,
+        d['alpha'] =self.alpha,
+        d['invL'] =self.invL,
+        d['ll'] =self.ll,
+        return d
 
+    def save_trained_model(self, filename):
+        """
+        Serialize the model to a file.
+        """
+        d = self.pack_npz()
+        with open(filename, 'w') as f:
+            np.savez(f, **d)
 
     def unpack_npz(self, npzfile):
-        self.X = npzfile['X']
-        self.y = npzfile['y']
-        self.mu = npzfile['mu'][0]
-        self.kernel_name = npzfile['kernel_name'][0]
-        self.kernel_params = npzfile['kernel_params']
-        self.alpha = npzfile['alpha']
-        self.invL = npzfile['invL']
-        self.ll = npzfile['ll']
+        self.X = npzfile['X'][0]
+        self.y = npzfile['y'][0]
+        self.mu = npzfile['mu'][0][0]
+        self.kernel = npzfile['kernel'].item()
+        self.alpha = npzfile['alpha'][0]
+        self.invL = npzfile['invL'][0]
+        self.ll = npzfile['ll'][0]
         self.basisfns = npzfile['basisfns']
-        if self.basisfns:
+        if self.basisfns is not None and len(self.basisfns.shape) > 0:
             self.beta_bar = npzfile['beta_bar']
             self.c = npzfile['c']
             self.invc = npzfile['invc']
@@ -414,20 +397,5 @@ class GaussianProcess:
         npzfile.close()
 
         self.n = self.X.shape[0]
-        self.kernel = kernels.setup_kernel(self.kernel_name, self.kernel_params, extra=None)
 
 
-def main():
-    X = np.array(((0,0), (0,1), (1,0), (1,1)))
-    y = np.array((1, 50, 50, 15))
-
-
-    gp = GaussianProcess(X=X, y=y, kernel="sqexp", kernel_params=(1,), sigma=0.01)
-    print gp.predict((0,0))
-
-#    print pickle.dumps(gp)
-
-#    plot_interpolated_surface(gp, X, y)
-
-if __name__ == "__main__":
-    main()

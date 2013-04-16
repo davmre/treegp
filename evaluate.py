@@ -13,37 +13,7 @@ def abs_loss(y1, y2):
     return np.sum(np.abs(y1-y2))
 
 
-def cross_validate(X, y, kernel="se", folds=-1, kernel_params_values=None, kernel_extra=None, sigma_values=None):
-    """
-     do cross-validation to find the best hyperparameters
-     folds: do k-fold cross-validation. if folds=-1, do leave-one-out CV
-     kernel_params_values: a list of lists, with with ith list giving values to try for the ith kernel param
-     sigma_values: list of values to try for sigma
-     if either "values" param is None, don't optimize over that param
-     """
-
-    f = open("cv_results.log", 'a')
-
-    if folds==-1:
-        folds = X.shape[0]
-
-    best_params = np.ones((len(kernel_params_values),))
-    best_sigma = 1
-    best_param_loss = np.float("inf")
-
-    for params in itertools.product(*kernel_params_values):
-        se_kernel = kernels.SEKernel(params)
-        K = se_kernel(X, X)
-        for sigma in sigma_values:
-            Ks = K + np.eye(K.shape[0])*(sigma**2)
-            print params[0], sigma,
-            loss, train_loss, baseline_loss = test_kfold(X, y, folds, "se_noiseless", params, kernel_extra, Ks, sq_loss, train_loss=True)
-            print "give loss", loss, "training loss", train_loss, "baseline", baseline_loss
-            f.write("%f %f %f %f\n" % (params[0], sigma, loss, train_loss))
-            f.flush()
-    f.close()
-
-def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, loss_fn=sq_loss, train_loss=False):
+def test_kfold(X, y, folds, kernel, K=None, loss_fn=sq_loss, train_loss=False):
     """
     Run kfold cross-validation to evaluate the GP mean predictions with regard to a specified loss function.
 
@@ -59,9 +29,8 @@ def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, lo
 
     # compute the loss obtained by both training and testing on the entire dataset. this is obviously illegitimate.
     if train_loss or (K is None):
-        k = kernels.setup_kernel(kernel, np.asarray(kernel_params), kernel_extra, priors=None)
-        K = k(X,X)
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K)
+        K = kernel(X,X)
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, K=K)
         predictions = gp.predict(X)
         tl = loss_fn(predictions, y)
         print "train pred mean", np.mean(predictions), "true mean", np.mean(y)
@@ -79,7 +48,7 @@ def test_kfold(X, y, folds, kernel, kernel_params, kernel_extra=None, K=None, lo
         test = np.arange(foldstart, foldend, dtype=np.uint)
 
         # train the GP and evaluate its predictions
-        gp = GaussianProcess(X=X[train, :], y=y[train,:], kernel=kernel, kernel_params=kernel_params, kernel_extra=kernel_extra, K=K[train, :][:, train])
+        gp = GaussianProcess(X=X[train, :], y=y[train,:], kernel=kernel, K=K[train, :][:, train])
         predictions = gp.predict(X[test,:])
         kfold_predictions[foldstart:foldend] = predictions
         loss += loss_fn(predictions, y[test])

@@ -1,5 +1,7 @@
 import numpy as np
 import scipy.special
+from util import marshal_fn, unmarshal_fn
+import copy
 
 def gen_pairwise_matrix(f, X1, X2):
     """
@@ -26,10 +28,13 @@ def almost_equal(x1, x2, tol=1e-6):
 # abstract base class for kernels
 class Kernel(object):
 
-    def __init__(self, params, priors):
+    def set_params(self, params):
         self.params = params
         self.nparams = len(params)
+
+    def __init__(self, params, priors):
         self.priors = priors
+        self.set_params(params)
 
     def _check_args(self, X1, X2):
         X1 = np.asarray(X1)
@@ -45,7 +50,10 @@ class Kernel(object):
         elif len(X1.shape)==1 and len(X2.shape)==2 and (X2.shape[0] == 1 or X2.shape[1] == 1):
             return np.reshape(X1, (X1.shape[0], 1)), np.reshape(X2, (-1, 1))
         else:
-            print X1, X2
+            print "HERE THEY ARE"
+            print X1
+            print X2
+            print "THERE THEY WERE"
             raise RuntimeError("Incompatible dimensions in kernel arguments.")
 
     def __mul__(self, k_rhs):
@@ -73,6 +81,11 @@ class Kernel(object):
         return np.asarray([b.logpdf_dx(a) if b is not None else 0 for (a,b) in zip(self.params, self.priors)])
 
 class SumKernel(Kernel):
+
+    def set_params(self, params):
+        self.lhs.set_params(params[:self.param_split])
+        self.rhs.set_params(params[self.param_split:])
+
     def __init__(self, lhs, rhs):
         self.lhs=lhs
         self.rhs=rhs
@@ -96,6 +109,10 @@ class SumKernel(Kernel):
         return g
 
 class ProductKernel(Kernel):
+    def set_params(self, params):
+        self.lhs.set_params(params[:self.param_split])
+        self.rhs.set_params(params[self.param_split:])
+
     def __init__(self, lhs, rhs):
         self.lhs=lhs
         self.rhs=rhs
@@ -121,9 +138,6 @@ class ProductKernel(Kernel):
 
 class LinearKernel(Kernel):
 
-    def __init__(self, params=None, priors=None):
-        super(LinearKernel, self).__init__(params, priors)
-
     def __call__(self, X1, X2, identical=False):
         return np.dot(X1, X2.T)
 
@@ -140,8 +154,9 @@ class SEKernel(Kernel):
     params[1:]: ws is an array of characteristic width scales for each coordinate.
     """
 
-    def __init__(self, params, priors = None):
-        super(SEKernel, self).__init__(params, priors)
+    def set_params(self, params):
+        super(SEKernel, self).set_params(params)
+
         self.sigma2_f = params[0]
         self.ws = params[1:]
         assert( len(self.ws) > 0 )
@@ -191,9 +206,8 @@ class DistFNKernel(Kernel):
     k(x,y) = sigma2_f * exp(-d(x,y)^2 / ws^2)
     """
 
-    def __init__(self, params, distfn, priors = None, deriv=None):
-        super(DistFNKernel, self).__init__(params, priors)
-
+    def set_params(self, params):
+        super(DistFNKernel, self).set_params(params)
         if len(params) == 1:
             self.sigma2_f = 1
             self.w = params[0]
@@ -203,8 +217,15 @@ class DistFNKernel(Kernel):
             self.w = params[1]
             self.df_params = params[2:]
 
+    def __init__(self, params, distfn, priors = None, deriv=None):
+        super(DistFNKernel, self).__init__(params, priors)
+
         self.distfn = lambda a,b: distfn(a,b,self.df_params)
         self.distfn_deriv_i = None if deriv is None else lambda i, a, b: deriv(i, a, b, self.df_params)
+
+        # keep the original arguments so we can pickle/unpickle easily
+        self.dfn = distfn
+        self.dfn_deriv = deriv
 
     def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
@@ -245,14 +266,31 @@ class DistFNKernel(Kernel):
 
         return dK
 
+    def __getstate__(self):
+        state = copy.copy(self.__dict__)
+        del state['distfn']
+        del state['distfn_deriv_i']
+        state['dfn'] = marshal_fn(self.dfn)
+        if self.dfn_deriv is not None:
+            state['dfn_deriv'] = marshal_fn(self.dfn_deriv)
+        return state
+
+    def __setstate__(self, state):
+        state['dfn'] = unmarshal_fn(state['dfn'])
+        if state['dfn_deriv'] is not None:
+            state['dfn_deriv'] = unmarshal_fn(state['dfn_deriv'])
+        self.__dict__.update(state)
+        self.distfn = lambda a,b: self.dfn(a,b,self.df_params)
+        self.distfn_deriv_i = None if self.dfn_deriv is None else \
+            lambda a,b: self.dfn_deriv(a,b,self.df_params)
 
 class SEKernelIso(SEKernel):
     """
     Squared-exponential kernel with isotropic covariance (same width
     scale for each coordinate).
     """
-    def __init__(self, params, priors = None):
-        super(SEKernel, self).__init__(params, priors)
+    def set_params(self, params):
+        Kernel.set_params(self, params)
         self.sigma2_f = params[0]
         self.w = params[1]
         self.ws = None
@@ -289,11 +327,12 @@ class SEKernelIso(SEKernel):
 class DiagonalKernel(Kernel):
     """
     Kernel given by k(x1,x2)=s^2 if x1==x2, otherwise =0. Takes a
-    single parameter, s^2. 
+    single parameter, s^2.
     """
-    def __init__(self, params, priors=None):
-        super(DiagonalKernel, self).__init__(params, priors)
-        self.s2 = self.params[0]
+
+    def set_params(self, params):
+        super(DiagonalKernel, self).set_params(params)
+        self.s2 = params[0]
 
     def __call__(self, X1, X2, identical=False):
         X1, X2 = self._check_args(X1,X2)
@@ -319,7 +358,7 @@ class DiagonalKernel(Kernel):
                 (m,d) = X2.shape
                 return np.zeros((n,m))
 
-def setup_kernel(name, params, extra, priors=None):
+def setup_kernel(name, params, extra=None, priors=None):
     """
     Construct a kernel object from a string description.
     """
