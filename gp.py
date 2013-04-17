@@ -195,7 +195,7 @@ class GaussianProcess:
 #            print "cache hit!"
         return self.query_K
 
-    def sample(self, X1, obs=False):
+    def sample(self, X1, include_obs=False):
         """
         Sample from the GP posterior at a set of points given by the rows of X1.
 
@@ -205,7 +205,7 @@ class GaussianProcess:
 
         (n,d) = X1.shape
         means = np.reshape(self.predict(X1), (-1, 1))
-        K = self.covariance(X1, obs_covar=obs)
+        K = self.covariance(X1, include_obs=include_obs)
         samples = np.random.randn(n, 1)
 
         L = scipy.linalg.cholesky(K, lower=True)
