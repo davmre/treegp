@@ -56,6 +56,9 @@ class GaussianProcess:
             # train model
             if K is None:
                 K = self.kernel(X, X, identical=True)
+                K += np.eye(K.shape[0]) * 1e-8 # try to avoid losing
+                                               # positive-definiteness
+                                               # to numeric issues
 
             L = None
             self.alpha = None
@@ -119,7 +122,7 @@ class GaussianProcess:
             # warning: commented out code (in quotes) is not correct.
             # alternate code below is (I think) correct, but might be slower.
 
-            """
+
             # here we follow eqn 2.43 in R&W
             #
             # let z = H.T*b - y, then we want
@@ -145,16 +148,15 @@ class GaussianProcess:
             # following eqn 2.43 in R&W, we want to compute
             # log det(K + H.T * B * H). using the matrix inversion
             # lemma, we instead compute
-            # log det(K^-1) + log det(B) + log det(B^-1 + H*K^-1*H.T)
-            ld2_Kinv = np.log(np.diag(self.invL)).sum()
+            # log det(K) + log det(B) + log det(B^-1 + H*K^-1*H.T)
+            ld2_K = np.log(np.diag(L)).sum()
             ld2 =  np.log(np.diag(self.c)).sum() # det( B^-1 - H * K^-1 * H.T )
             ld_B = np.log(np.linalg.det(B))
 
             # eqn 2.43 in R&W, using the matrix inv lemma
-            self.ll = -.5 * (term1 - term2 + self.n * np.log(2*np.pi) + ld_B) - ld2_Kinv - ld2
+            self.ll = -.5 * (term1 - term2 + self.n * np.log(2*np.pi) + ld_B) - ld2_K - ld2
 
             """
-
             # method 2
             sqrt_B = scipy.linalg.cholesky(B, lower=True)
             tmp = np.dot(sqrt_B.T, H)
@@ -169,6 +171,7 @@ class GaussianProcess:
             det_term = np.log(np.diag(K_HBH_sqrt)).sum()
 
             self.ll = -.5 * main_term - det_term - .5 * self.n * np.log(2*np.pi)
+            """
 
     def get_query_K(self, X1):
         # avoid recomputing the kernel if we're evaluating at the same
@@ -210,21 +213,25 @@ class GaussianProcess:
 
         return samples
 
-    def predict(self, X1):
+    def predict(self, X1, parametric_only=False):
         """
         Predict the posterior mean, at a set of points given by the rows of X1.
         """
-        Kstar = self.get_query_K(X1)
-        gp_pred = self.mu + np.dot(Kstar.T, self.alpha)
 
-        if self.basisfns:
-            R = self.query_R
-            mean_pred = np.dot(R.T, self.beta_bar)
-            gp_pred += mean_pred
+        if parametric_only:
+            H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=float)
+            gp_pred = np.dot(H.T, self.beta_bar)
+        else:
+            Kstar = self.get_query_K(X1)
+            gp_pred = self.mu + np.dot(Kstar.T, self.alpha)
+            if self.basisfns:
+                R = self.query_R
+                mean_pred = np.dot(R.T, self.beta_bar)
+                gp_pred += mean_pred
 
         return gp_pred
 
-    def covariance(self, X1, obs_covar=False, pad=1e-8):
+    def covariance(self, X1, include_obs=False, parametric_only=False, pad=1e-8):
         """
         Compute the posterior covariance matrix at a set of points given by the rows of X1.
 
@@ -238,7 +245,11 @@ class GaussianProcess:
 
         Kstar = self.get_query_K(X1)
         tmp = np.dot(self.invL, Kstar)
-        gp_cov = self.kernel(X1,X1, identical=obs_covar) - np.dot(tmp.T, tmp)
+        if not parametric_only:
+            gp_cov = self.kernel(X1,X1, identical=include_obs) - np.dot(tmp.T, tmp)
+        else:
+            n = X1.shape[0]
+            gp_cov = np.zeros((n,n))
 
         if self.basisfns:
             R = self.query_R
@@ -251,8 +262,8 @@ class GaussianProcess:
         gp_cov += pad * np.eye(gp_cov.shape[0])
         return gp_cov
 
-    def variance(self, X1, with_obs_noise=True):
-        return np.diag(self.covariance(X1, obs_covar=with_obs_noise))
+    def variance(self, X1, **kwargs):
+        return np.diag(self.covariance(X1, **kwargs))
 
     def param_predict(self):
         return self.beta_bar
@@ -322,13 +333,9 @@ class GaussianProcess:
                 grad[i] = dlldi
 
         else:
-            sqrt_B = scipy.linalg.cholesky(B, lower=True)
-            tmp = np.dot(sqrt_B.T, H)
-            K_HBH = K + np.dot(tmp.T, tmp)
-            K_HBH_sqrt = scipy.linalg.cholesky(K_HBH, lower=True)
-            K_HBH_sqrt_inv = scipy.linalg.inv(K_HBH_sqrt)
-            K_HBH_inv = np.dot(K_HBH_sqrt_inv.T, K_HBH_sqrt_inv)
-
+            Kinv = np.dot(self.invL.T, self.invL)
+            tmp = np.dot(self.invc, self.HKinv)
+            K_HBH_inv = Kinv - np.dot(tmp.T, tmp)
             alpha_z = np.dot(K_HBH_inv, z)
 
             for i in range(n):

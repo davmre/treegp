@@ -28,6 +28,9 @@ def almost_equal(x1, x2, tol=1e-6):
 # abstract base class for kernels
 class Kernel(object):
 
+    def get_params(self):
+        return self.params
+
     def set_params(self, params):
         self.params = params
         self.nparams = len(params)
@@ -82,6 +85,9 @@ class Kernel(object):
 
 class SumKernel(Kernel):
 
+    def get_params(self):
+        return tuple(self.lhs.get_params()) + tuple(self.rhs.get_params())
+
     def set_params(self, params):
         self.lhs.set_params(params[:self.param_split])
         self.rhs.set_params(params[self.param_split:])
@@ -109,6 +115,10 @@ class SumKernel(Kernel):
         return g
 
 class ProductKernel(Kernel):
+
+    def get_params(self):
+        return tuple(self.lhs.get_params()) + tuple(self.rhs.get_params())
+
     def set_params(self, params):
         self.lhs.set_params(params[:self.param_split])
         self.rhs.set_params(params[self.param_split:])
@@ -434,34 +444,6 @@ def setup_kernel(name, params, extra=None, priors=None):
             k = DistFNKernel(kparams, distfn, priors = kpriors, deriv = distfn_deriv_i)
             composite_kernel *= k
         k = composite_kernel + noise_kernel
-    elif name == "composite":
-
-        # assume we are passed the following functions in kernel_extra:
-        # ke[0] = dist_diff  -- returns difference of log(ev-to-sta) distances in KM
-        # ke[1] = azi_diff   -- returns differences in azimuth, in degrees (always positive)
-        # ke[2] = depth_diff -- returns difference of log(depth) in KM
-        # ke[3] = local_dist -- returns distance in KM between two events (including depth)
-
-        # assume we are passed the following params/priors:
-        # 0 : sigma2_n -- noise variance
-        # 1 : sigma2_f_dist -- function variance wrt dist_diff
-        # 2 : w_dist -- length scale for dist_diff
-        # 3 : sigma2_f_azi -- function variance wrt azi_diff
-        # 4 : w_azi -- length scale for azi_diff
-        # 5 : sigma2_f_depth -- function variance wrt depth_diff
-        # 6 : w_depth -- length scale for depth_diff
-        # 7 : sigma2_f_local -- function variance wrt local_dist
-        # 8 : w_local -- length scale for local_dist
-        noise_kernel = DiagonalKernel(params=params[0:1], priors = priors[0:1])
-        distdiff_kernel = DistFNKernel(params=params[1:3], priors=priors[1:3],
-                                       distfn = extra[0], deriv=None)
-        azidiff_kernel = DistFNKernel(params=params[3:5], priors=priors[3:5],
-                                      distfn = extra[1], deriv=None)
-        depthdiff_kernel = DistFNKernel(params=params[5:7], priors=priors[5:7],
-                                        distfn = extra[2], deriv=None)
-        local_kernel = DistFNKernel(params=params[7:9], priors=priors[7:9],
-                                    distfn = extra[3], deriv=None)
-        k = noise_kernel + distdiff_kernel + azidiff_kernel + depthdiff_kernel + local_kernel
     else:
         raise RuntimeError("unrecognized kernel name %s." % (name))
     return k

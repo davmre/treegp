@@ -111,6 +111,10 @@ class TestSimple(unittest.TestCase):
 
         self.assertTrue( (np.abs(pgrad - empirical_pgrad) < 0.01 ).all() )
 
+    def test_get_params(self):
+        p = np.array(self.k.get_params())
+        self.assertTrue( (p == self.start_params).all() )
+
     def test_plot(self):
         plot.predict_1d(self.gp, x_min = -5.0, x_max = 5.0)
 
