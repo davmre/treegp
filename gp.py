@@ -20,7 +20,8 @@ class GaussianProcess:
                  kernel = None, K=None,
                  mean="constant", fname=None,
                  basisfns=None, param_mean=None, param_cov=None,
-                 compute_grad=False):
+                 compute_grad=False,
+                 save_extra_info=False):
 
         """ Initialize a Gaussian process by providing EITHER the training data (X, y) and kernel info (kernel, kernel_params, kernel_priors, kernel_extra) OR  the filename of a serialized GP.
         'K' is an optional precomputed kernel matrix (for efficiency).
@@ -52,6 +53,8 @@ class GaussianProcess:
                 b = param_mean
                 B = param_cov
                 self.y = y
+                if save_extra_info:
+                    self.H = H
 
             # train model
             if K is None:
@@ -67,6 +70,8 @@ class GaussianProcess:
                 L = scipy.linalg.cholesky(K, lower=True)
                 self.alpha = scipy.linalg.cho_solve((L, True), self.y)
                 self.invL = scipy.linalg.inv(L)
+                if save_extra_info:
+                    self.L = L
             except np.linalg.linalg.LinAlgError:
                 #u,v = np.linalg.eig(K)
                 #print K, u
@@ -404,5 +409,3 @@ class GaussianProcess:
         npzfile.close()
 
         self.n = self.X.shape[0]
-
-
