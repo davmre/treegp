@@ -107,11 +107,10 @@ class GaussianProcess:
                 H=None
                 B=None
 
-            self._compute_marginal_likelihood(L=L, z=z, B=B, H=H, K=K)
 
             if compute_grad:
+                self._compute_marginal_likelihood(L=L, z=z, B=B, H=H, K=K)
                 self.ll_grad = self._log_likelihood_gradient(z=z, K=K, H=H, B=B)
-
 
 
     def _compute_marginal_likelihood(self, L, z=None, B=None, H=None, K=None):
