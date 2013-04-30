@@ -18,7 +18,7 @@ def gp_ll(X, y, kernel, kernel_params=None, **kwargs):
     if kernel_params is not None:
         kernel.set_params(kernel_params)
     try:
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, **kwargs)
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, compute_ll=True, **kwargs)
         ll = gp.log_likelihood()
     except:
         ll = np.float("-inf")
@@ -50,7 +50,7 @@ def gp_nll_ngrad(X, y, kernel, kernel_params=None, **kwargs):
 
     try:
 #        print "optimizing params", kernel_params
-        gp = GaussianProcess(X=X, y=y, kernel=kernel, compute_grad=True, **kwargs)
+        gp = GaussianProcess(X=X, y=y, kernel=kernel, compute_ll=True, compute_grad=True, **kwargs)
 
         nll = -1 * gp.log_likelihood()
         ngrad = -1 * gp.ll_grad

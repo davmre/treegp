@@ -20,6 +20,7 @@ class GaussianProcess:
                  kernel = None, K=None,
                  mean="constant", fname=None,
                  basisfns=None, param_mean=None, param_cov=None,
+                 compute_ll=False,
                  compute_grad=False,
                  save_extra_info=False):
 
@@ -107,11 +108,12 @@ class GaussianProcess:
                 H=None
                 B=None
 
-
-            if compute_grad:
+            if compute_ll:
                 self._compute_marginal_likelihood(L=L, z=z, B=B, H=H, K=K)
+            else:
+                self.ll = -np.inf
+            if compute_grad:
                 self.ll_grad = self._log_likelihood_gradient(z=z, K=K, H=H, B=B)
-
 
     def _compute_marginal_likelihood(self, L, z=None, B=None, H=None, K=None):
         # to compute log(det(K)), we use the trick that the

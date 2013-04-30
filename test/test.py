@@ -76,11 +76,11 @@ class TestSimple(unittest.TestCase):
         for i in range(n):
             kp[i] -= eps
             self.k.set_params(kp)
-            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k)
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k, compute_ll=True)
             l1 = gp.log_likelihood()
             kp[i] += 2*eps
             self.k.set_params(kp)
-            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k)
+            gp = GaussianProcess(X=self.X, y=self.y, kernel=self.k, compute_ll=True)
             l2 = gp.log_likelihood()
             kp[i] -= eps
             self.k.set_params(kp)
@@ -178,6 +178,7 @@ class TestSemiParametric(unittest.TestCase):
                                   basisfns=self.basisfns,
                                   param_mean=self.b,
                                   param_cov=self.B,
+                                  compute_ll=True,
                                   compute_grad=True)
 
 
@@ -210,8 +211,8 @@ class TestSemiParametric(unittest.TestCase):
 
         gp = self.gp
 
-        gp_smallparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(4) * 0.0000000000001, compute_grad=False)
-        gp_noparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="zero", compute_grad=False)
+        gp_smallparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(4) * 0.0000000000001, compute_ll=True)
+        gp_noparam = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=self.k, mean="zero", compute_ll=True)
 
         self.assertGreater(self.gp.ll, gp_smallparam.ll)
         self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=-1)
@@ -221,9 +222,9 @@ class TestSemiParametric(unittest.TestCase):
         k0 = kernels.setup_kernel("se", params=np.array((.0011, .01, .001)))
         k1 = kernels.setup_kernel("se", params=np.array((.001, .0101, .001)))
         k2 = kernels.setup_kernel("se", params=np.array((.001, .01, .0011)))
-        gp_grad0 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k0, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
-        gp_grad1 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k1, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
-        gp_grad2 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k2, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_grad=False)
+        gp_grad0 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k0, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_ll=True)
+        gp_grad1 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k1, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_ll=True)
+        gp_grad2 = GaussianProcess(X=self.X[::10,:], y=self.y1[::10], kernel=k2, mean="parametric", basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, compute_ll=True)
 
         empirical_llgrad = [(gp_grad0.ll - gp.ll) / .0001,
                             (gp_grad1.ll - gp.ll) / .0001,
