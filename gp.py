@@ -16,13 +16,71 @@ def log_det(X):
 
 class GaussianProcess:
 
+    def build_kernel_matrix(self, X, kernel):
+        K = np.matrix(kernel(X, X, identical=True), copy=False)
+        K += np.eye(K.shape[0]) * 1e-8 # try to avoid losing
+                                       # positive-definiteness
+                                       # to numeric issues
+        return K
+
+    def invert_kernel_matrix(self, K):
+        L = None
+        alpha = None
+        try:
+            L = scipy.linalg.cholesky(K, lower=True)
+            alpha = scipy.linalg.cho_solve((L, True), self.y)
+            invL = scipy.linalg.inv(L)
+        except np.linalg.linalg.LinAlgError:
+            #u,v = np.linalg.eig(K)
+            #print K, u
+            #import pdb; pdb.set_trace()
+            raise
+        except ValueError:
+            raise
+        return alpha, invL, L
+
+    def build_parametric_model(self, alpha, invL, H, b, B):
+        # notation follows section 2.7 of Rasmussen and Williams
+        Binv = scipy.linalg.inv(B)
+        tmp = np.dot(H, alpha) + np.dot(Binv, b) # H * K^-1 * y + B^-1 * b
+
+        hl = np.dot(H, invL.T)
+        M_inv  = Binv + np.dot(hl, hl.T) # here M = (inv(B) +
+                                         # H*K^-1*H.T)^-1 is
+                                         # the posterior
+                                         # covariance matrix
+                                         # on the params.
+
+        c = scipy.linalg.cholesky(M_inv, lower=True) # c = sqrt(inv(B) + H*K^-1*H.T)
+        beta_bar = scipy.linalg.cho_solve((c, True), tmp)
+        invc = scipy.linalg.inv(c)
+        HKinv = np.dot(hl, self.invL)
+        return c, beta_bar, invc, HKinv
+
+    def get_data_features(self, X):
+        H = np.array([[f(x) for x in X] for f in self.basisfns], dtype=float)
+        return H
+
+    def setup_mean(self, mean, X, y):
+        H = None
+        if mean == "zero":
+            mu = 0
+            y = y
+        if mean == "constant":
+            mu = np.mean(y)
+            y = y - self.mu
+        if mean == "parametric":
+            mu = 0
+            H = self.get_data_features(X)
+            y = y
+        return mu, y, H
+
     def __init__(self, X=None, y=None,
                  kernel = None, K=None,
                  mean="constant", fname=None,
                  basisfns=None, param_mean=None, param_cov=None,
                  compute_ll=False,
-                 compute_grad=False,
-                 save_extra_info=False):
+                 compute_grad=False):
 
         """ Initialize a Gaussian process by providing EITHER the training data (X, y) and kernel info (kernel, kernel_params, kernel_priors, kernel_extra) OR  the filename of a serialized GP.
         'K' is an optional precomputed kernel matrix (for efficiency).
@@ -35,85 +93,41 @@ class GaussianProcess:
             self.kernel = kernel
             self.X = X
             self.n = X.shape[0]
-
-            #self.tree=None
-            #if kdtree:
-            #    self.tree = KDTree(pts=X)
-
-            self.basisfns = None
-            if mean == "zero":
-                self.mu = 0
-                self.y = y
-            if mean == "constant":
-                self.mu = np.mean(y)
-                self.y = y - self.mu
-            if mean == "parametric":
-                self.mu = 0
-                self.basisfns = basisfns
-                H = np.array([[f(x) for x in X] for f in basisfns], dtype=float)
-                b = param_mean
-                B = param_cov
-                self.y = y
-                if save_extra_info:
-                    self.H = H
+            self.basisfns = basisfns
+            self.mu, self.y, H = self.setup_mean(mean, X, y)
 
             # train model
             if K is None:
-                K = self.kernel(X, X, identical=True)
-                K += np.eye(K.shape[0]) * 1e-8 # try to avoid losing
-                                               # positive-definiteness
-                                               # to numeric issues
+                K = self.build_kernel_matrix(X, kernel)
 
-            L = None
-            self.alpha = None
-            self.Kinv = None
-            try:
-                L = scipy.linalg.cholesky(K, lower=True)
-                self.alpha = scipy.linalg.cho_solve((L, True), self.y)
-                self.invL = scipy.linalg.inv(L)
-                if save_extra_info:
-                    self.L = L
-            except np.linalg.linalg.LinAlgError:
-                #u,v = np.linalg.eig(K)
-                #print K, u
-                #import pdb; pdb.set_trace()
-                raise
-            except ValueError:
-                raise
 
-            if self.basisfns:
-                # notation follows section 2.7 of Rasmussen and Williams
-                Binv = scipy.linalg.inv(B)
-                tmp = np.dot(H, self.alpha) + np.dot(Binv, b) # H * K^-1 * y + B^-1 * b
+            self.alpha, self.invL, L = self.invert_kernel_matrix(K)
 
-                hl = np.dot(H, self.invL.T)
-                M_inv  = Binv + np.dot(hl, hl.T) # here M = (inv(B) +
-                                                 # H*K^-1*H.T)^-1 is
-                                                 # the posterior
-                                                 # covariance matrix
-                                                 # on the params.
-                self.c = scipy.linalg.cholesky(M_inv, lower=True) # c = sqrt(inv(B) + H*K^-1*H.T)
-
-                self.beta_bar = scipy.linalg.cho_solve((self.c, True), tmp)
-                self.invc = scipy.linalg.inv(self.c)
-                self.HKinv = np.dot(hl, self.invL)
-
+            if mean == "parametric":
+                self.c, \
+                    self.beta_bar, \
+                    self.invc, \
+                    self.HKinv = self.build_parametric_model(self.alpha,
+                                                             self.invL, H,
+                                                             b=param_mean, B=param_cov)
 
             # precompute training set log likelihood, so we don't need
             # to keep L around.
             if self.basisfns:
-                z = np.dot(H.T, b) - y
+                z = np.dot(H.T, param_mean) - y
+                B = param_cov
             else:
                 z = None
                 H=None
                 B=None
-
             if compute_ll:
                 self._compute_marginal_likelihood(L=L, z=z, B=B, H=H, K=K)
             else:
                 self.ll = -np.inf
             if compute_grad:
-                self.ll_grad = self._log_likelihood_gradient(z=z, K=K, H=H, B=B)
+                Kinv = np.dot(self.invL.T, self.invL)
+                self.ll_grad = self._log_likelihood_gradient(z=z, K=K, H=H, B=B, Kinv=Kinv)
+
 
     def _compute_marginal_likelihood(self, L, z=None, B=None, H=None, K=None):
         # to compute log(det(K)), we use the trick that the
@@ -193,7 +207,7 @@ class GaussianProcess:
             self.query_hsh = hsh
 
             if self.basisfns:
-                H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=float)
+                H = self.get_data_features(X1)
                 self.query_R = H - np.dot(self.HKinv, self.query_K)
 
 #            print "cache fail: model %d called with " % (len(self.alpha)), X1
@@ -225,7 +239,7 @@ class GaussianProcess:
         """
 
         if parametric_only:
-            H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=float)
+            H = self.get_data_features(X1)
             gp_pred = np.dot(H.T, self.beta_bar)
         else:
             Kstar = self.get_query_K(X1)
@@ -252,7 +266,8 @@ class GaussianProcess:
         Kstar = self.get_query_K(X1)
         tmp = np.dot(self.invL, Kstar)
         if not parametric_only:
-            gp_cov = self.kernel(X1,X1, identical=include_obs) - np.dot(tmp.T, tmp)
+            qf = np.dot(tmp.T, tmp)
+            gp_cov = self.kernel(X1,X1, identical=include_obs) - qf
         else:
             n = X1.shape[0]
             gp_cov = np.zeros((n,n))
@@ -317,7 +332,7 @@ class GaussianProcess:
 
         return self.ll
 
-    def _log_likelihood_gradient(self, z=None, K=None, H=None, B=None):
+    def _log_likelihood_gradient(self, z=None, K=None, H=None, B=None, Kinv=None):
         """
         Gradient of the training set log likelihood with respect to the kernel hyperparams.
         """
@@ -333,13 +348,11 @@ class GaussianProcess:
 
                 # here we use the fact:
                 # trace(AB) = sum_{ij} A_ij * B_ij
-                Kinv = np.dot(self.invL.T, self.invL)
                 dlldi -= .5 * np.sum(np.sum(Kinv.T * dKdi))
 
                 grad[i] = dlldi
 
         else:
-            Kinv = np.dot(self.invL.T, self.invL)
             tmp = np.dot(self.invc, self.HKinv)
             K_HBH_inv = Kinv - np.dot(tmp.T, tmp)
             alpha_z = np.dot(K_HBH_inv, z)
