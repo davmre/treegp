@@ -1,0 +1,56 @@
+Tar file of the  analysis is  
+
+NCAR_pinfill.others.tar
+available at ftp.cgd.ucar.edu/pub/nychka
+
+To extract in UNIX
+
+In a subdirectory 
+
+tar -xvf NCAR_pinfill.others.tar
+
+
+The complete ppt files based on regular station data have the names 
+
+ppt.complete.Ynnn
+where nnn = 001, 002, ..., 103
+
+Precip units are in total millimeters per month and the time span is 
+1895-1997. There are a total of 11918 station locations, thus  each file 
+has 11918 lines. 
+
+Metadata on these stations is found in METAinfo
+columns of this file are:
+ station id  longitude, latitude, elevation 
+
+(however elevation is not used in any of the infill procedures.)
+
+Each separate data file consists of the precipitation for a single year
+each line of the file is data for one station according to the format:
+
+station id, 12 temps ( jan-dec) , 12 missing values codes (1=missing, 0= 
+present). When a data value is missing a statistically infilled value 
+appears. 
+
+Some typical lines ( starting @ 204 in ppt.complete.Y020):
+
+017126     48  117  116  109   64   40   60  165   43   57   57  209  111111111111
+017157     52  106   60  151   68   81  102  325   19   31   50  150  000000000000
+017207     62  101   85  150   38   76  117  187   73   71   75  186  111111111111
+
+and is written with the FORTRAN format statement format(a8,12I5,2x, 12I1)
+
+Note that in UNIX there is a simple way to accumulate the results for a 
+single station. 
+e.g. for station with id 017366
+
+grep 017366 ppt.complete.* > just.one.station
+
+Of course assembling a data subset for many stations will involve looping 
+over all the yearly files. 
+
+Doug Nychka
+nychka@ucar.edu
+
+
+
