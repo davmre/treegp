@@ -3,7 +3,7 @@ import unittest
 
 from sparsegp.gp import GP, GPCov, optimize_gp_hyperparams
 
-from sigvisa.utils.cover_tree import VectorTree
+from sparsegp.cover_tree import VectorTree
 import pyublas
 
 class TestCTree(unittest.TestCase):
