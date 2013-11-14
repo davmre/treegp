@@ -997,21 +997,21 @@ def optimize_gp_hyperparams(optimize_Xu=True,
         except FloatingPointError as e:
             print "warning: floating point error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
             raise
         except np.linalg.linalg.LinAlgError as e:
             print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
         except scikits.sparse.cholmod.CholmodError as e:
             print "warning: cholmod error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
         except ValueError as e:
             print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
-
+            grad = np.zeros((len(v),))
+        print "hyperparams", v, "ll", ll, "grad", grad
         return -1 * ll, (-1 * grad  if grad is not None else None)
 
     def build_gp(v, **kwargs2):
