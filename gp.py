@@ -928,7 +928,7 @@ def sparsegp_ll_grad(priors=None, **kwargs):
 
 
 def optimize_gp_hyperparams(optimize_Xu=True,
-                            noise_var=1.0, noise_var_prior=None,
+                            noise_var=1.0, noise_prior=None,
                             cov_main=None, cov_fic=None, **kwargs):
 
     n_mean_wfn = len(cov_main.wfn_params) if cov_main is not None else 0
