@@ -123,10 +123,16 @@ class GPCov(object):
     def prior_logp(self):
         return prior_ll(self.dfn_params, self.dfn_priors) + prior_ll(self.wfn_params, self.wfn_priors)
 
-    def prior_grad(self):
-        return np.concatenate([prior_grad(self.dfn_params, self.dfn_priors) ,
-                               prior_grad(self.wfn_params, self.wfn_priors)])
+    def prior_grad(self, include_xu=True):
+        v = np.concatenate([prior_grad(self.dfn_params, self.dfn_priors) ,
+                            prior_grad(self.wfn_params, self.wfn_priors)])
+        if include_xu and self.Xu is not None:
+            v = np.concatenate([v, np.zeros((self.Xu.size,))])
+        return v
 
+    def __repr__(self):
+        s = self.wfn_str + str(self.wfn_params) + ", " + self.dfn_str + str(self.dfn_params)
+        return s
 
 
 class GP(object):
@@ -982,30 +988,31 @@ def optimize_gp_hyperparams(optimize_Xu=True,
             grad = gp.ll_grad
 
             ll += noise_prior.log_p(noise_var) + \
-                  new_cov_main.prior_ll() + \
-                  new_cov_fic.prior_ll()
+                  ( new_cov_main.prior_logp() if new_cov_main is not None else 0 ) + \
+                  ( new_cov_fic.prior_logp() if new_cov_fic is not None else 0 )
             grad += np.concatenate([[noise_prior.deriv_log_p(noise_var)],
-                                    new_cov_main.prior_grad(),
-                                    new_cov_fic.prior_grad()])
+                                    new_cov_main.prior_grad() if new_cov_main is not None else [],
+                                    new_cov_fic.prior_grad(include_xu=optimize_Xu) if new_cov_fic is not None else []])
 
         except FloatingPointError as e:
             print "warning: floating point error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
+            raise
         except np.linalg.linalg.LinAlgError as e:
             print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
         except scikits.sparse.cholmod.CholmodError as e:
             print "warning: cholmod error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
+            grad = np.zeros((len(v),))
         except ValueError as e:
             print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
-            grad = None
-
-        return -1 * ll, -1 * grad
+            grad = np.zeros((len(v),))
+        print "hyperparams", v, "ll", ll, "grad", grad
+        return -1 * ll, (-1 * grad  if grad is not None else None)
 
     def build_gp(v, **kwargs2):
         noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)
