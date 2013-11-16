@@ -958,7 +958,8 @@ def optimize_gp_hyperparams(optimize_Xu=True,
 
         if cov_main is not None:
             new_cov_main = GPCov(wfn_str=cov_main.wfn_str, dfn_str=cov_main.dfn_str,
-                                 wfn_params = cm_wfn_params, dfn_params = cm_dfn_params)
+                                 wfn_params = cm_wfn_params, dfn_params = cm_dfn_params,
+                                 wfn_priors = cov_main.wfn_priors, dfn_priors=cov_main.dfn_priors)
         else:
             new_cov_main = None
 
@@ -971,6 +972,7 @@ def optimize_gp_hyperparams(optimize_Xu=True,
 
             new_cov_fic = GPCov(wfn_str=cov_fic.wfn_str, dfn_str=cov_fic.dfn_str,
                                  wfn_params = cf_wfn_params, dfn_params = cf_dfn_params,
+                                wfn_priors = cov_fic.wfn_priors, dfn_priors=cov_fic.dfn_priors,
                                 Xu = Xu)
         else:
             new_cov_fic = None
