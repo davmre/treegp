@@ -2,6 +2,7 @@ import numpy as np
 import unittest
 
 from sparsegp.gp import GP, GPCov, optimize_gp_hyperparams
+from sparsegp.features import featurizer_from_string
 
 from sparsegp.cover_tree import VectorTree
 import pyublas
@@ -65,11 +66,8 @@ class TestGP(unittest.TestCase):
         self.cov = GPCov(wfn_params=[.0187,], dfn_params=[ 9.00, 1.0], wfn_str="se", dfn_str="lld")
         self.noise_var = .022
 
-        self.basisfns = ()
-        self.b = None #np.array(())
-        self.B = None #np.array(((),))
 
-        self.gp = GP(X=self.X, y=self.y, basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
+        self.gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
 
     def test_sparse_gradient(self):
         g_sparse = self.gp._log_likelihood_gradient(None, None, None, self.gp.Kinv)
@@ -79,7 +77,7 @@ class TestGP(unittest.TestCase):
     def test_SE_gradient(self):
         grad = self.gp.ll_grad
 
-        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov)
+        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov)
 
         n = len(x0)
         kp  = x0
@@ -126,12 +124,14 @@ class TestSemiParametric(unittest.TestCase):
         x = np.linspace(-5,5,N)
         self.X = np.reshape(x, (-1, 1))
 
-        H = np.vstack([x**3, x**2, x, np.ones(N)]) # basis functions for a cubic regression
+        self.basis = 'poly3'
+        H, self.featurizer, self.featurizer_recovery = featurizer_from_string(self.X, self.basis, extract_dim=0)
+
         self.beta = [9.91898792e-01,  -1.62113090e+00,   3.15437605e+00,   1.25732838e+00]
         self.B = np.eye(4) * 9
         self.b = np.zeros((4,))
 
-        p = np.dot(H.T, self.beta)
+        p = np.dot(H, self.beta)
 
         def covar_matrix(x, k):
             n = len(x)
@@ -147,7 +147,6 @@ class TestSemiParametric(unittest.TestCase):
         f1 = np.random.multivariate_normal(mean=np.zeros((len(x),)), cov=K1)
         self.y1 = f1 + p
 
-        self.basisfns = [lambda x : x**3, lambda x : x**2, lambda x : x, lambda x : 1]
 
         self.cov = GPCov(wfn_params=[.001,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean")
         self.noise_var = .001
@@ -156,7 +155,8 @@ class TestSemiParametric(unittest.TestCase):
                      y=self.y1,
                      noise_var = self.noise_var,
                      cov_main = self.cov,
-                     basisfns=self.basisfns,
+                     basis = self.basis,
+                     featurizer_recovery = self.featurizer_recovery,
                      param_mean=self.b,
                      param_cov=self.B,
                      compute_ll=True,
@@ -174,14 +174,6 @@ class TestSemiParametric(unittest.TestCase):
         posterior_covar = gp.param_covariance()
         self.assertTrue( np.max(posterior_covar.flatten()) < 1e-2 )
 
-        # we should have the most uncertainty about the low-order
-        # params (e.g. the constant term), and the least uncertainty
-        # about the high-order terms, since a small change in a high-
-        # order term has a larger effect on the resulting function.
-        posterior_var = np.diag(posterior_covar)
-        self.assertTrue( posterior_var[3] > posterior_var[2] )
-        self.assertTrue( posterior_var[2] > posterior_var[1] )
-        self.assertTrue( posterior_var[1] > posterior_var[0] )
 
 
     def test_likelihood(self):
@@ -189,8 +181,8 @@ class TestSemiParametric(unittest.TestCase):
         # in the limit of a prior forcing the parameters to be zero,
         # the semiparametric likelihood should match that of a
         # standard GP.
-        gp_smallparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basisfns=self.basisfns, param_mean=self.b, param_cov=np.eye(len(self.b)) * 0.000000000000001, compute_ll=True, sparse_threshold=0)
-        gp_noparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basisfns=(), compute_ll=True, sparse_threshold=0)
+        gp_smallparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=np.eye(len(self.b)) * 0.000000000000001, compute_ll=True, sparse_threshold=0)
+        gp_noparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basis=None, compute_ll=True, sparse_threshold=0)
 
         self.assertGreater(self.gp.ll, gp_smallparam.ll)
         self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=-1)
@@ -199,7 +191,7 @@ class TestSemiParametric(unittest.TestCase):
     def test_gradient(self):
         grad = self.gp.ll_grad
 
-        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, basisfns=self.basisfns, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov)
+        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov)
 
         n = len(x0)
         kp  = x0
