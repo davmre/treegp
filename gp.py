@@ -12,7 +12,7 @@ import hashlib
 import types
 import marshal
 
-
+from sparsegp.features import featurizer_from_string, recover_featurizer
 from sparsegp.cover_tree import VectorTree, MatrixTree
 
 def marshal_fn(f):
@@ -218,10 +218,6 @@ class GP(object):
 
         return c, beta_bar, invc, HKinv
 
-    def get_data_features(self, X):
-        H = np.array([[f(x) for x in X] for f in self.basisfns], dtype=float)
-        return H
-
     def sparsify(self, M):
         import scipy.sparse
         if scipy.sparse.issparse(M):
@@ -248,8 +244,11 @@ class GP(object):
                  noise_var=1.0,
                  cov_main=None,
                  cov_fic=None,
-                 basisfns=(),
-                 param_mean=None, param_cov=None,
+                 basis = None,
+                 extract_dim = None,
+                 param_mean=None,
+                 param_cov=None,
+                 featurizer_recovery=None,
                  compute_ll=False,
                  compute_grad=False,
                  sparse_threshold=1e-10,
@@ -279,7 +278,7 @@ class GP(object):
             self.cov_fic = cov_fic
             self.noise_var = noise_var
             self.sparse_threshold = sparse_threshold
-            self.basisfns = basisfns
+            self.basis = basis
             self.timings = dict()
 
             if X is not None:
@@ -302,7 +301,15 @@ class GP(object):
                 self.ll = np.float('-inf')
                 return
 
-            H = self.get_data_features(X)
+            H = None
+            self.featurizer = None
+            self.featurizer_recovery = None
+            if featurizer_recovery is None:
+                if basis is not None:
+                    H, self.featurizer, self.featurizer_recovery = featurizer_from_string(X, basis, extract_dim=extract_dim, transpose=True)
+            else:
+                self.featurizer, self.featurizer_recovery = recover_featurizer(basis, featurizer_recovery, transpose=True)
+                H = self.featurizer(X)
 
             # train model
             t0 = time.time()
@@ -328,7 +335,7 @@ class GP(object):
                 alpha, factor, L, Kinv = self.invert_kernel_matrix(K)
             self.Kinv = self.sparsify(Kinv)
 
-            if len(self.basisfns) > 0:
+            if self.featurizer is not None:
                 self.c,self.beta_bar, self.invc, self.HKinv = self.build_parametric_model(alpha,
                                                                                           self.Kinv,
                                                                                           H,
@@ -381,8 +388,8 @@ class GP(object):
 
         self.predict_tree.set_v(0, alpha_r.astype(np.float))
 
-        d = len(self.basisfns)
-        if d > 0:
+        if HKinv is not None:
+            d = HKinv.shape[0]
             self.cov_tree = VectorTree(self.X, d, *self.cov_main.tree_params())
             HKinv = HKinv.astype(np.float)
             for i in range(d):
@@ -405,8 +412,8 @@ class GP(object):
         else:
             gp_pred = np.array([self.predict_tree.weighted_sum(0, np.reshape(x, (1,-1)), eps) for x in X1])
 
-        if len(self.basisfns) > 0:
-            H = self.get_data_features(X1)
+        if self.featurizer is not None:
+            H = self.featurizer(X1)
             mean_pred = np.reshape(np.dot(H.T, self.beta_bar), gp_pred.shape)
             gp_pred += mean_pred
 
@@ -425,8 +432,8 @@ class GP(object):
             Kstar = self.kernel(self.X, X1)
             gp_pred = np.dot(Kstar.T, self.alpha_r)
 
-        if len(self.basisfns) > 0:
-            H = self.get_data_features(X1)
+        if self.featurizer is not None:
+            H = self.featurizer(X1)
             mean_pred = np.reshape(np.dot(H.T, self.beta_bar), gp_pred.shape)
             gp_pred += mean_pred
 
@@ -467,8 +474,8 @@ class GP(object):
             self.querysp_K = self.sparse_kernel(X1)
             self.querysp_hsh = hsh
 
-            if self.basisfns:
-                H = self.get_data_features(X1)
+            if self.featurizer is not None:
+                H = self.featurizer(X1)
                 self.querysp_R = H - np.asmatrix(self.HKinv) * self.querysp_K
 
 #            print "cache fail: model %d called with " % (len(self.alpha)), X1
@@ -489,8 +496,8 @@ class GP(object):
             self.query_K = self.kernel(self.X, X1)
             self.query_hsh = hsh
 
-            if self.basisfns:
-                H = self.get_data_features(X1)
+            if self.featurizer is not None:
+                H = self.featurizer(X1)
                 self.query_R = H - np.asmatrix(self.HKinv) * self.query_K
 
 #            print "cache fail: model %d called with " % (len(self.alpha)), X1
@@ -512,7 +519,7 @@ class GP(object):
         else:
             gp_cov = np.zeros((m,m))
 
-        if len(self.basisfns) > 0:
+        if self.featurizer is not None:
             R = self.querysp_R
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
@@ -549,7 +556,7 @@ class GP(object):
         else:
             gp_cov = np.zeros((m,m))
 
-        if len(self.basisfns) > 0:
+        if self.featurizer is not None:
             R = self.querysp_R
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
@@ -583,7 +590,7 @@ class GP(object):
         else:
             gp_cov = np.zeros((m,m))
 
-        if len(self.basisfns) > 0:
+        if self.featurizer is not None:
             R = self.query_R
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
@@ -596,7 +603,6 @@ class GP(object):
     def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=1e-8, eps_abs=1e-4, cutoff_rule=2):
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
-        d = len(self.basisfns)
 
         if not parametric_only:
             gp_cov = self.kernel(X1, X1, identical=include_obs)
@@ -606,8 +612,9 @@ class GP(object):
         else:
             gp_cov = np.zeros((m,m))
 
-        if len(self.basisfns) > 0:
-            H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=np.float64)
+        if self.featurizer is not None:
+            H = self.featurizer(X1)
+            d = H.shape[0]
             HKinvKstar = np.zeros((d, m))
 
             for i in range(d):
@@ -719,14 +726,15 @@ class GP(object):
 
     def pack_npz(self):
         d = dict()
-        if self.basisfns is not None and len(self.basisfns) > 0:
+        if self.featurizer is not None:
             d['c'] = self.c
             d['beta_bar'] = self.beta_bar
             d['invc'] = self.invc
             d['HKinv'] = self.HKinv
-            d['basisfns'] = np.array([marshal_fn(f) for f in self.basisfns], dtype=object)
+            d['basis'] = self.basis
+            d.update(self.featurizer_recovery)
         else:
-            d['basisfns'] = np.empty(0)
+            d['basis'] = np.empty(0)
         d['X']  = self.X,
         d['y'] =self.y,
         d['ymean'] = self.ymean,
@@ -770,9 +778,9 @@ class GP(object):
         self.cov_main = unpack_gpcov(npzfile, 'main')
         self.cov_fic = unpack_gpcov(npzfile, 'fic')
 
-        self.basisfns = npzfile['basisfns']
-        if self.basisfns is not None and len(self.basisfns) > 0:
-            self.basisfns = [unmarshal_fn(code) for code in self.basisfns]
+        self.basis = str(npzfile['basis'])
+        if self.basis is not None and len(self.basis) > 0:
+            self.featurizer, self.featurizer_recovery = recover_featurizer(self.basis, npzfile, transpose=True)
             self.beta_bar = npzfile['beta_bar']
             self.c = npzfile['c']
             self.invc = npzfile['invc']
@@ -803,7 +811,7 @@ class GP(object):
             ldiag = np.diag(L)
 
         # everything is much simpler in the pure nonparametric case
-        if not self.basisfns:
+        if self.featurizer is None:
             ld2_K = np.log(ldiag).sum()
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha_r) + self.n * np.log(2*np.pi)) - ld2_K
             return
@@ -874,7 +882,7 @@ class GP(object):
         nparams = 1 + len(self.cov_main.wfn_params) + len(self.cov_main.dfn_params)
         grad = np.zeros((nparams,))
 
-        if self.basisfns:
+        if self.featurizer is not None:
             tmp = np.dot(self.invc, self.HKinv)
             K_HBH_inv = Kinv - np.dot(tmp.T, tmp)
             alpha_z = np.reshape(np.dot(K_HBH_inv, z), (-1, 1))
