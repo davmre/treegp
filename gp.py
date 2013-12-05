@@ -12,8 +12,8 @@ import hashlib
 import types
 import marshal
 
-from sparsegp.features import featurizer_from_string, recover_featurizer
-from sparsegp.cover_tree import VectorTree, MatrixTree
+from features import featurizer_from_string, recover_featurizer
+from cover_tree import VectorTree, MatrixTree
 
 def marshal_fn(f):
     if f.func_closure is not None:
@@ -246,6 +246,7 @@ class GP(object):
                  cov_fic=None,
                  basis = None,
                  extract_dim = None,
+                 param_var = 1.0,
                  param_mean=None,
                  param_cov=None,
                  featurizer_recovery=None,
@@ -336,6 +337,11 @@ class GP(object):
             self.Kinv = self.sparsify(Kinv)
 
             if self.featurizer is not None:
+                d = H.shape[0]
+                if param_cov is None:
+                    param_cov = np.eye(d) * param_var
+                if param_mean is None:
+                    param_mean = np.zeros((d,))
                 self.c,self.beta_bar, self.invc, self.HKinv = self.build_parametric_model(alpha,
                                                                                           self.Kinv,
                                                                                           H,
@@ -654,7 +660,7 @@ class GP(object):
 
         return samples
 
-    def param_predict(self):
+    def param_mean(self):
         return self.beta_bar
 
     def param_covariance(self, chol=False):
@@ -708,7 +714,7 @@ class GP(object):
         else:
             n = len(y)
 
-        K = self.covariance_spkernel(X1, include_obs=include_obs)
+        K = self.covariance(X1, include_obs=include_obs)
         y = y-self.predict(X1)
 
         if n==1:
@@ -1017,10 +1023,10 @@ def optimize_gp_hyperparams(optimize_Xu=True,
             print "warning: cholmod error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
             grad = np.zeros((len(v),))
-        except ValueError as e:
-            print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
-            ll = np.float("-inf")
-            grad = np.zeros((len(v),))
+        #except ValueError as e:
+        #    print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
+        #    ll = np.float("-inf")
+        #    grad = np.zeros((len(v),))
         print "hyperparams", v, "ll", ll, "grad", grad
         return -1 * ll, (-1 * grad  if grad is not None else None)
 

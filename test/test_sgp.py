@@ -167,7 +167,7 @@ class TestSemiParametric(unittest.TestCase):
 
     def test_param_recovery(self):
         gp = self.gp
-        inferred_beta = gp.param_predict()
+        inferred_beta = gp.param_mean()
         self.assertTrue( ( np.abs(inferred_beta - self.beta) < .1 ).all() )
 
         # make sure the posterior covariance matrix is reasonable
