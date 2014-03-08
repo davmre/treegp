@@ -6,7 +6,6 @@ import scipy
 import scipy.sparse
 import scipy.sparse.linalg
 import scikits.sparse.cholmod
-import sklearn.preprocessing
 import pyublas
 import hashlib
 import types
@@ -114,6 +113,12 @@ class GPCov(object):
                 prefix + "_dfn_params": self.dfn_params,
                 prefix + "_Xu": self.Xu}
 
+    def bounds(self, include_xu=True):
+        b = [(1e-8,None),] * (len(self.wfn_params) + len(self.dfn_params))
+        if include_xu and self.Xu is not None:
+            b += [(None, None),] * self.Xu.size()
+        return b
+
     def flatten(self, include_xu=True):
         v = np.concatenate([self.wfn_params, self.dfn_params])
         if include_xu and self.Xu is not None:
@@ -177,6 +182,9 @@ class GP(object):
         return alpha, factor, L, Kinv
 
     def sparse_invert_kernel_matrix(self, K):
+        if type(K) == np.ndarray:
+            K = self.sparsify(K)
+
         alpha = None
         t0 = time.time()
         factor = scikits.sparse.cholmod.cholesky(K)
@@ -200,23 +208,6 @@ class GP(object):
 
         return alpha, factor, factor.L(), Kinv
 
-    def build_parametric_model(self, alpha, Kinv_sp, H, b, B):
-        # notation follows section 2.7 of Rasmussen and Williams
-        b = np.reshape(b, (-1,))
-        Binv = scipy.linalg.inv(B)
-        tmp = np.reshape(np.asarray(np.dot(H, alpha)), (-1,)) + np.dot(Binv, b)  # H * K^-1 * y + B^-1 * b
-
-        HKinv = H * Kinv_sp
-        M_inv  = Binv + np.dot(HKinv, H.T) # here M = (inv(B) +
-                                           # H*K^-1*H.T)^-1 is the
-                                           # posterior covariance
-                                           # matrix on the params.
-
-        c = scipy.linalg.cholesky(M_inv, lower=True) # c = sqrt(inv(B) + H*K^-1*H.T)
-        beta_bar = scipy.linalg.cho_solve((c, True), tmp)
-        invc = scipy.linalg.inv(c)
-
-        return c, beta_bar, invc, HKinv
 
     def sparsify(self, M):
         import scipy.sparse
@@ -239,6 +230,125 @@ class GP(object):
         y_sorted = combined_sorted[:, -1].flatten()
         return X_sorted, y_sorted
 
+
+
+    ##############################################################################
+    # methods for building / interacting with low-rank additive covariances
+
+    def get_data_features(self, X):
+        # compute the full set of features for a matrix X of test points
+        features = np.zeros((self.n_features, X.shape[0]))
+
+        i = 0
+        if self.featurizer is not None:
+            F = self.featurizer(X)
+            i = F.shape[0]
+            features[:i,:] = F
+
+        if self.predict_tree_fic is not None:
+            features[i:,:] = self.kernel(self.cov_fic.Xu, X, predict_tree=self.predict_tree_fic)
+
+        return features
+
+
+    def combine_lowrank_models(self, H, b, B, K_fic_un, K_fic_uu):
+        # for training lowrank models: given feature representations
+        # (H, K_fic_un) and prior covariances (B, K_fic_uu) for two
+        # additive models, return the combined feature representation,
+        # combined parameter prior mean (assuming the FIC parameters
+        # have mean 0) and combined parameter precision matrix (we
+        # assume the parameters of the two models are independent, so
+        # this is block diagonal).
+
+        N = 0
+        self.n_features = 0
+        self.n_param_features = 0
+        if H is not None:
+            self.n_param_features = H.shape[0]
+            self.n_features += self.n_param_features
+            N = H.shape[1]
+        if K_fic_un is not None:
+            self.n_features += K_fic_un.shape[0]
+            N = K_fic_un.shape[1]
+
+        features = np.zeros((self.n_features, N))
+        mean = np.zeros((self.n_features,))
+        cov_inv = np.zeros((self.n_features, self.n_features))
+
+        if H is not None:
+            features[0:self.n_param_features, :] = H
+            mean[0:self.n_param_features] = b
+            cov_inv[0:self.n_param_features,0:self.n_param_features] = np.linalg.inv(B)
+        if K_fic_un is not None:
+            features[self.n_param_features:, :] = K_fic_un
+            cov_inv[self.n_param_features:,self.n_param_features:] = np.linalg.inv(K_fic_uu)
+
+        return features, mean, cov_inv
+
+    def build_low_rank_model(self, alpha, Kinv_sp, H, b, Binv):
+        """
+        let n be the training size; we'll use an additional rank-m approximation.
+        the notation here follows section 2.7 in Rasmussen & Williams.
+
+        takes:
+         alpha: n x 1, equal to K^-1 y
+         Kinv_sp: n x n sparse matrix, equal to K^-1
+         H: n x m features of training data (this is Qfu for FIC)
+         b: m x 1 prior mean on feature weights (this is 0 for FIC)
+         B: m x m prior covariance on feature weights (this is Quu for FIC)
+
+        returns:
+         invc = inv(chol(M)), where M = (B^-1 + H K^-1 H^T)^-1 is the
+                posterior covariance matrix on feature weights
+         beta_bar = M (HK^-1y + B^-1 b) gives the weights for the correction
+                    of the low-rank component to the mean prediction
+         HKinv = HK^-1 comes up in the marginal likelihood computation, so we
+                 go ahead and remember the value we compute now.
+        """
+
+        # tmp = H * K^-1 * y + B^-1 * b
+        tmp = np.reshape(np.asarray(np.dot(H, alpha)), (-1,))
+        if b is not None:
+            tmp += np.dot(Binv, b)
+
+        HKinv = H * Kinv_sp
+        M_inv  = Binv + np.dot(HKinv, H.T)
+        c = scipy.linalg.cholesky(M_inv, lower=True)
+        beta_bar = scipy.linalg.cho_solve((c, True), tmp)
+        invc = scipy.linalg.inv(c)
+        return c, invc, beta_bar, HKinv
+
+
+    def init_csfic_kernel(self, K_cs):
+        K_fic_uu = self.kernel(self.cov_fic.Xu, self.cov_fic.Xu, identical=False, predict_tree = self.predict_tree_fic)
+        Luu  = scipy.linalg.cholesky(K_fic_uu, lower=True)
+        self.Luu = Luu
+        K_fic_un = self.kernel(Xu, X, identical=False, predict_tree = self.predict_tree_fic)
+
+        dc = self.covariance_diag_correction(X)
+        diag_correction = scipy.sparse.dia_matrix((dc, 0), shape=K_cs.shape)
+
+        K_cs = K_cs + diag_correction
+        return K_cs, K_fic_uu, K_fic_un
+
+
+    def setup_parametric_featurizer(self, X, featurizer_recovery, basis, extract_dim):
+        # setup featurizer for parametric mean function, if applicable
+        H = None
+        self.featurizer = None
+        self.featurizer_recovery = None
+        if featurizer_recovery is None:
+            if basis is not None:
+                H, self.featurizer, self.featurizer_recovery = featurizer_from_string(X, basis, extract_dim=extract_dim, transpose=True)
+        else:
+            self.featurizer, self.featurizer_recovery = recover_featurizer(basis, featurizer_recovery, transpose=True)
+            H = self.featurizer(X)
+        return H
+
+    ###################################################################################
+
+
+
     def __init__(self, X=None, y=None,
                  fname=None,
                  noise_var=1.0,
@@ -246,7 +356,6 @@ class GP(object):
                  cov_fic=None,
                  basis = None,
                  extract_dim = None,
-                 param_var = 1.0,
                  param_mean=None,
                  param_cov=None,
                  featurizer_recovery=None,
@@ -254,8 +363,6 @@ class GP(object):
                  compute_grad=False,
                  sparse_threshold=1e-10,
                  K = None,
-                 dfn_str = "lld",
-                 wfn_str = "se",
                  sort_events=False,
                  build_tree=True,
                  sparse_invert=True,
@@ -275,11 +382,7 @@ class GP(object):
                                               # kernel matrix
 
 
-            self.cov_main = cov_main
-            self.cov_fic = cov_fic
-            self.noise_var = noise_var
-            self.sparse_threshold = sparse_threshold
-            self.basis = basis
+            self.cov_main, self.cov_fic, self.noise_var, self.sparse_threshold, self.basis = cov_main, cov_fic, noise_var, sparse_threshold, basis
             self.timings = dict()
 
             if X is not None:
@@ -302,87 +405,79 @@ class GP(object):
                 self.ll = np.float('-inf')
                 return
 
-            H = None
-            self.featurizer = None
-            self.featurizer_recovery = None
-            if featurizer_recovery is None:
-                if basis is not None:
-                    H, self.featurizer, self.featurizer_recovery = featurizer_from_string(X, basis, extract_dim=extract_dim, transpose=True)
+
+            self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_tree)
+
+            # compute sparse kernel matrix
+            if sparse_invert and build_tree:
+                self.K = self.sparse_kernel(self.X, identical=True, predict_tree=self.predict_tree)
             else:
-                self.featurizer, self.featurizer_recovery = recover_featurizer(basis, featurizer_recovery, transpose=True)
-                H = self.featurizer(X)
+                self.K = self.kernel(self.X, self.X, identical=True, predict_tree=self.predict_tree)
 
-            # train model
-            t0 = time.time()
-            if build_tree:
-                tree_X = pyublas.why_not(self.X)
+            # setup the parameteric features, if applicable, and return the feature representation of X
+            H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
+
+            if cov_fic is not None:
+                self.K, K_fic_uu, K_fic_un = init_csfic_kernel(self.K)
             else:
-                tree_X = np.array([[0.0,],], dtype=float)
-            self.predict_tree = VectorTree(tree_X, 1, *self.cov_main.tree_params())
-            t1 = time.time()
-            self.timings['build_predict_tree'] = t1-t0
+                self.predict_tree_fic = None
+                K_fic_uu, K_fic_un = None, None
 
-            if K is None:
-                if sparse_invert and build_tree:
-                    K = self.sparse_build_kernel_matrix(self.X)
-                else:
-                    K = self.build_kernel_matrix(self.X)
-            self.K = self.sparsify(K)
-
+            # invert kernel matrix
             if sparse_invert:
-                alpha, factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
-                self.factor = factor
+                alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
             else:
-                alpha, factor, L, Kinv = self.invert_kernel_matrix(K)
+                alpha, self.factor, L, Kinv = self.invert_kernel_matrix(K)
             self.Kinv = self.sparsify(Kinv)
 
-            if self.featurizer is not None:
-                d = H.shape[0]
-                if param_cov is None:
-                    param_cov = np.eye(d) * param_var
-                if param_mean is None:
-                    param_mean = np.zeros((d,))
-                self.c,self.beta_bar, self.invc, self.HKinv = self.build_parametric_model(alpha,
-                                                                                          self.Kinv,
-                                                                                          H,
-                                                                                          b=param_mean,
-                                                                                          B=param_cov)
-                r = self.y - np.dot(H.T, self.beta_bar)
-                z = np.dot(H.T, param_mean) - self.y
-                B = param_cov
+            #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+
+            # if we have any additive low-rank covariances, compute the appropriate terms
+            if H is not None or cov_fic is not None:
+                HH, b, Binv = self.combine_lowrank_models(H, param_mean, param_cov, K_fic_un, K_fic_uu)
+                self.c, self.invc,self.beta_bar, self.HKinv = self.build_low_rank_model(alpha,
+                                                                                        self.Kinv,
+                                                                                        HH,
+                                                                                        b,
+                                                                                        Binv)
+                r = self.y - np.dot(HH.T, self.beta_bar)
+                self.alpha_r = np.reshape(np.asarray(self.factor(r)), (-1,))
+                z = np.dot(HH.T, b) - self.y
             else:
+                self.n_features = 0
                 self.HKinv = None
+                self.alpha_r = alpha
                 r = self.y
                 z = self.y
-                B = None
-
-            self.alpha_r = np.reshape(np.asarray(factor(r)), (-1,))
+                Binv = None
+                HH = None
 
             if build_tree:
                 self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_size=leaf_bin_size)
-            #t6 = time.time()
 
             # precompute training set log likelihood, so we don't need
             # to keep L around.
             if compute_ll:
-                self._compute_marginal_likelihood(L=L, z=z, B=B, H=H, K=self.K, Kinv=self.Kinv)
+                self._compute_marginal_likelihood(L=L, z=z, Binv=Binv, H=HH, K=self.K, Kinv=self.Kinv)
             else:
                 self.ll = -np.inf
-            #t7 = time.time()
             if compute_grad:
-                self.ll_grad = self._log_likelihood_gradient(z=z, H=H, B=B, Kinv=self.Kinv)
+                self.ll_grad = self._log_likelihood_gradient(z=z, H=HH, Kinv=self.Kinv)
 
-            #t8 = time.time()
-            """
-            print t1-t0
-            print t2-t1
-            print t3-t2
-            print t4-t3
-            print t5-t4
-            print t6-t5
-            print t7-t6
-            print t8-t7
-            """
+
+    def build_initial_single_trees(self, build_tree = False):
+        if build_tree:
+            tree_X = pyublas.why_not(self.X)
+        else:
+            tree_X = np.array([[0.0,] * self.X.shape[1],], dtype=float)
+
+        predict_tree = VectorTree(tree_X, 1, *self.cov_main.tree_params())
+
+        if self.cov_fic is not None:
+            predict_tree_fic = VectorTree(tree_X, 1, *self.cov_fic.tree_params())
+        else:
+            predict_tree_fic = None
+        return predict_tree, predict_tree_fic
 
     def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_size):
         if self.n == 0: return
@@ -395,10 +490,9 @@ class GP(object):
         self.predict_tree.set_v(0, alpha_r.astype(np.float))
 
         if HKinv is not None:
-            d = HKinv.shape[0]
-            self.cov_tree = VectorTree(self.X, d, *self.cov_main.tree_params())
+            self.cov_tree = VectorTree(self.X, self.n_features, *self.cov_main.tree_params())
             HKinv = HKinv.astype(np.float)
-            for i in range(d):
+            for i in range(self.n_features):
                 self.cov_tree.set_v(i, HKinv[i, :])
 
 
@@ -418,8 +512,8 @@ class GP(object):
         else:
             gp_pred = np.array([self.predict_tree.weighted_sum(0, np.reshape(x, (1,-1)), eps) for x in X1])
 
-        if self.featurizer is not None:
-            H = self.featurizer(X1)
+        if self.n_features > 0:
+            H = self.get_data_features(X1)
             mean_pred = np.reshape(np.dot(H.T, self.beta_bar), gp_pred.shape)
             gp_pred += mean_pred
 
@@ -438,8 +532,8 @@ class GP(object):
             Kstar = self.kernel(self.X, X1)
             gp_pred = np.dot(Kstar.T, self.alpha_r)
 
-        if self.featurizer is not None:
-            H = self.featurizer(X1)
+        if self.n_features > 0:
+            H = self.get_data_features(X1)
             mean_pred = np.reshape(np.dot(H.T, self.beta_bar), gp_pred.shape)
             gp_pred += mean_pred
 
@@ -449,25 +543,30 @@ class GP(object):
         gp_pred += self.ymean
         return gp_pred
 
-
-    def kernel(self, X1, X2, identical=False):
+    def kernel(self, X1, X2, identical=False, predict_tree=None):
+        predict_tree = self.predict_tree if predict_tree is None else predict_tree
         K = self.predict_tree.kernel_matrix(X1, X2, False)
         if identical:
             K += self.noise_var * np.eye(K.shape[0])
         return K
 
-    def sparse_kernel(self, X, identical=False):
-        if self.sparse_threshold ==0:
-            max_distance = 1e300
-        else:
-            max_distance = np.sqrt(-np.log(self.sparse_threshold)) # assuming a SE kernel
+    def sparse_kernel(self, X, identical=False, predict_tree=None, max_distance=None):
+        predict_tree = self.predict_tree if predict_tree is None else predict_tree
+
+        if max_distance is None:
+            if self.sparse_threshold ==0:
+                max_distance = 1e300
+            else:
+                max_distance = np.sqrt(-np.log(self.sparse_threshold)) # assuming a SE kernel
+
         entries = self.predict_tree.sparse_training_kernel_matrix(X, max_distance)
         spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,1], entries[:,0])), shape=(self.n, len(X)), dtype=float)
+
         if identical:
             spK = spK + self.noise_var * scipy.sparse.eye(spK.shape[0])
         return spK
 
-    def get_query_K_sparse(self, X1):
+    def get_query_K_sparse(self, X1, no_R=False):
         # avoid recomputing the kernel if we're evaluating at the same
         # point multiple times. This is effectively a size-1 cache.
         try:
@@ -480,8 +579,8 @@ class GP(object):
             self.querysp_K = self.sparse_kernel(X1)
             self.querysp_hsh = hsh
 
-            if self.featurizer is not None:
-                H = self.featurizer(X1)
+            if self.n_features > 0 and not no_R:
+                H = self.get_data_features(X1)
                 self.querysp_R = H - np.asmatrix(self.HKinv) * self.querysp_K
 
 #            print "cache fail: model %d called with " % (len(self.alpha)), X1
@@ -489,7 +588,7 @@ class GP(object):
 #            print "cache hit!"
         return self.querysp_K
 
-    def get_query_K(self, X1):
+    def get_query_K(self, X1, no_R=False):
         # avoid recomputing the kernel if we're evaluating at the same
         # point multiple times. This is effectively a size-1 cache.
         try:
@@ -502,8 +601,8 @@ class GP(object):
             self.query_K = self.kernel(self.X, X1)
             self.query_hsh = hsh
 
-            if self.featurizer is not None:
-                H = self.featurizer(X1)
+            if self.n_features > 0 and not no_R:
+                H = self.get_data_features(X1)
                 self.query_R = H - np.asmatrix(self.HKinv) * self.query_K
 
 #            print "cache fail: model %d called with " % (len(self.alpha)), X1
@@ -511,11 +610,19 @@ class GP(object):
 #            print "cache hit!"
         return self.query_K
 
+
+    def covariance_diag_correction(self, X):
+        K_fic_un = self.kernel(self.cov_fic.Xu, X, identical=False, predict_tree = self.predict_tree_fic)
+        B = scipy.linalg.solve(self.Luu, K_fic_un)
+        Qvff = np.sum(B*B, axis=0)
+        return self.wfn_params_fic[0] - Qvff
+
     def covariance_spkernel(self, cond, include_obs=False, parametric_only=False, pad=1e-8):
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
 
-        Kstar = self.get_query_K_sparse(X1)
+        t1 = time.time()
+        Kstar = self.get_query_K_sparse(X1, no_R=True)
         if not parametric_only:
             gp_cov = self.kernel(X1,X1, identical=include_obs)
             if self.n > 0:
@@ -524,14 +631,24 @@ class GP(object):
                 gp_cov -= qf
         else:
             gp_cov = np.zeros((m,m))
+        t2 = time.time()
+        self.qf_time = t2-t1
 
-        if self.featurizer is not None:
-            R = self.querysp_R
+        if self.n_features > 0:
+            t1 = time.time()
+            H = self.get_data_features(X1)
+            R = H - np.asmatrix(self.HKinv) * self.querysp_K
+
+            #R = self.querysp_R
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
             gp_cov += mean_cov
+            t2 = time.time()
+            self.nonqf_time = t2-t1
 
         gp_cov += pad * np.eye(gp_cov.shape[0])
+        if self.predict_tree_fic is not None:
+            gp_cov += self.covariance_diag_correction(X1)
 
         return gp_cov
 
@@ -562,7 +679,7 @@ class GP(object):
         else:
             gp_cov = np.zeros((m,m))
 
-        if self.featurizer is not None:
+        if self.n_features > 0:
             R = self.querysp_R
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
@@ -570,9 +687,12 @@ class GP(object):
 
         gp_cov += pad * np.eye(gp_cov.shape[0])
 
+        if self.predict_tree_fic is not None:
+            gp_cov += self.covariance_diag_correction(X1)
+
         return gp_cov
 
-    def covariance(self, cond, include_obs=False, parametric_only=False, pad=1e-8):
+    def covariance(self, cond, include_obs=False, parametric_only=False, pad=1e-8, qf_only=False):
         """
         Compute the posterior covariance matrix at a set of points given by the rows of X1.
 
@@ -586,52 +706,83 @@ class GP(object):
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
 
-        Kstar = self.get_query_K(X1)
+        t1 = time.time()
+        Kstar = self.get_query_K(X1, no_R=True)
         if not parametric_only:
             gp_cov = self.kernel(X1,X1, identical=include_obs)
             if self.n > 0:
                 tmp = self.Kinv * Kstar
                 qf = np.dot(Kstar.T, tmp)
+                if qf_only:
+                    return qf
                 gp_cov -= qf
         else:
             gp_cov = np.zeros((m,m))
+        t2 = time.time()
+        self.qf_time = t2-t1
 
-        if self.featurizer is not None:
-            R = self.query_R
+        if self.n_features > 0:
+            t1 = time.time()
+            H = self.get_data_features(X1)
+            R = H - np.asmatrix(self.HKinv) * self.query_K
+
             tmp = np.dot(self.invc, R)
             mean_cov = np.dot(tmp.T, tmp)
             gp_cov += mean_cov
+            t2 = time.time()
+            self.nonqf_time = t2-t1
 
         gp_cov += pad * np.eye(gp_cov.shape[0])
 
+        if self.predict_tree_fic is not None:
+            gp_cov += self.covariance_diag_correction(X1)
+
         return gp_cov
 
-    def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=1e-8, eps_abs=1e-4, cutoff_rule=2):
+    def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=1e-8, eps_abs=1e-4, cutoff_rule=1, qf_only=False):
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
+        cutoff_rule = int(cutoff_rule)
 
         if not parametric_only:
             gp_cov = self.kernel(X1, X1, identical=include_obs)
+            t1 = time.time()
             if self.n > 0:
-                qf = self.double_tree.quadratic_form(X1, X1, eps, eps_abs, cutoff_rule=cutoff_rule)
+                qf = np.zeros(gp_cov.shape)
+                for i in range(m):
+                    for j in range(m):
+                        qf[i,j] = self.double_tree.quadratic_form(X1[i:i+1], X1[j:j+1], eps, eps_abs, cutoff_rule)
+                if qf_only:
+                    return qf
                 gp_cov -= qf
+            t2 = time.time()
+            self.qf_time = t2-t1
+
         else:
             gp_cov = np.zeros((m,m))
 
-        if self.featurizer is not None:
-            H = self.featurizer(X1)
-            d = H.shape[0]
+        if self.n_features > 0:
+            t1 = time.time()
+            H = self.get_data_features(X1)
+            #H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=np.float64)
             HKinvKstar = np.zeros((d, m))
 
-            for i in range(d):
+            for i in range(self.n_features):
                 for j in range(m):
                     HKinvKstar[i,j] = self.cov_tree.weighted_sum(i, X1[j:j+1,:], eps)
             R = H - HKinvKstar
             v = np.dot(self.invc, R)
             mc = np.dot(v.T, v)
             gp_cov += mc
+            t2 = time.time()
+            self.nonqf_time = t2-t1
+
 
         gp_cov += pad * np.eye(m)
+
+        if self.predict_tree_fic is not None:
+            gp_cov += self.covariance_diag_correction(X1)
+
         return gp_cov
 
     def variance(self,cond, **kwargs):
@@ -732,11 +883,11 @@ class GP(object):
 
     def pack_npz(self):
         d = dict()
-        if self.featurizer is not None:
-            d['c'] = self.c
+        if self.n_features > 0:
             d['beta_bar'] = self.beta_bar
             d['invc'] = self.invc
             d['HKinv'] = self.HKinv
+        if self.basis is not None:
             d['basis'] = self.basis
             d.update(self.featurizer_recovery)
         else:
@@ -750,12 +901,13 @@ class GP(object):
         d['sparse_threshold'] =self.sparse_threshold,
         d['noise_var'] =self.noise_var,
         d['ll'] =self.ll,
-        d['alpha_r'] = self.alpha_r
+        d['n_features'] =self.n_features,
 
         if self.cov_main is not None:
             d.update(self.cov_main.packed("main"))
         if self.cov_fic is not None:
             d.update(self.cov_fic.packed("fic"))
+            d['Luu'] =self.Luu,
 
         return d
 
@@ -770,30 +922,37 @@ class GP(object):
     def unpack_npz(self, npzfile):
         self.X = npzfile['X'][0]
         self.y = npzfile['y'][0]
+        self.alpha_r = npzfile['alpha_r'].flatten()
         if 'ymean' in npzfile:
             self.ymean = npzfile['ymean']
         else:
             self.ymean = 0.0
+
+        self.noise_var = npzfile['noise_var'].item()
+        self.cov_main = unpack_gpcov(npzfile, 'main')
+        self.cov_fic = unpack_gpcov(npzfile, 'fic')
+        if self.cov_fic is not None:
+            self.Luu = npzfile['Luu'][0]
 
         self.Kinv = npzfile['Kinv'][0]
         self.K = npzfile['K'][0]
         self.sparse_threshold = npzfile['sparse_threshold'][0]
         self.ll = npzfile['ll'][0]
 
-        self.noise_var = npzfile['noise_var'][0]
-        self.cov_main = unpack_gpcov(npzfile, 'main')
-        self.cov_fic = unpack_gpcov(npzfile, 'fic')
-
+        self.n_features = int(npzfile['n_features'])
         self.basis = str(npzfile['basis'])
         if self.basis is not None and len(self.basis) > 0:
             self.featurizer, self.featurizer_recovery = recover_featurizer(self.basis, npzfile, transpose=True)
+        else:
+            self.featurizer = None
+            self.featurizer_recovery = None
+
+        if self.n_features > 0:
             self.beta_bar = npzfile['beta_bar']
-            self.c = npzfile['c']
             self.invc = npzfile['invc']
             self.HKinv = npzfile['HKinv']
         else:
             self.HKinv = None
-        self.alpha_r = npzfile['alpha_r']
 
     def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_size=0):
         npzfile = np.load(filename)
@@ -802,14 +961,14 @@ class GP(object):
         npzfile.close()
 
         self.n = self.X.shape[0]
-        self.predict_tree = VectorTree(self.X[0:2,:], 1, *self.cov_main.tree_params())
+        self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_tree)
         if build_tree:
             self.factor = scikits.sparse.cholmod.cholesky(self.K)
             self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_size=leaf_bin_size)
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 
-    def _compute_marginal_likelihood(self, L, z, B, H, K, Kinv):
+    def _compute_marginal_likelihood(self, L, z, Binv, H, K, Kinv):
 
         if scipy.sparse.issparse(L):
             ldiag = L.diagonal()
@@ -817,7 +976,7 @@ class GP(object):
             ldiag = np.diag(L)
 
         # everything is much simpler in the pure nonparametric case
-        if self.featurizer is None:
+        if self.n_features == 0:
             ld2_K = np.log(ldiag).sum()
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha_r) + self.n * np.log(2*np.pi)) - ld2_K
             return
@@ -857,7 +1016,7 @@ class GP(object):
 
         ld2_K = np.log(ldiag).sum()
         ld2 =  np.log(np.diag(self.c)).sum() # det( B^-1 - H * K^-1 * H.T )
-        ld_B = np.log(np.linalg.det(B))
+        ld_B = -np.log(np.linalg.det(Binv))
 
         # eqn 2.43 in R&W, using the matrix inv lemma
         self.ll = -.5 * (term1 - term2 + self.n * np.log(2*np.pi) + ld_B) - ld2_K - ld2
@@ -878,7 +1037,7 @@ class GP(object):
             dKdi = scipy.sparse.coo_matrix((entries, (nzr, nzc)), shape=(self.n, self.n), dtype=float)
         return dKdi
 
-    def _llgrad_main(self, z, H, B, Kinv):
+    def _llgrad_main(self, z, H, Kinv):
         """
         Gradient of the training set log likelihood with respect to the
         noise variance and the main kernel hyperparams.
@@ -888,7 +1047,7 @@ class GP(object):
         nparams = 1 + len(self.cov_main.wfn_params) + len(self.cov_main.dfn_params)
         grad = np.zeros((nparams,))
 
-        if self.featurizer is not None:
+        if self.n_features > 0:
             tmp = np.dot(self.invc, self.HKinv)
             K_HBH_inv = Kinv - np.dot(tmp.T, tmp)
             alpha_z = np.reshape(np.dot(K_HBH_inv, z), (-1, 1))
@@ -926,8 +1085,9 @@ class GP(object):
 
         return grad
 
-    def _log_likelihood_gradient(self, z, H, B, Kinv):
-        return self._llgrad_main(z, H, B, Kinv)
+
+    def _log_likelihood_gradient(self, z, H, Kinv):
+        return self._llgrad_main(z, H, Kinv)
 
     def log_likelihood(self):
         return self.ll
@@ -956,6 +1116,12 @@ def optimize_gp_hyperparams(optimize_Xu=True,
 
     n_fic_wfn  = len(cov_fic.wfn_params) if cov_fic is not None else 0
     n_fic_dfn = len(cov_fic.dfn_params) if cov_fic is not None else 0
+
+    bounds = [(1e-8, None),]
+    if cov_main is not None:
+        bounds += cov_main.bounds()
+    if cov_fic is not None:
+        bounds += cov_fic.bounds(include_xu=optimize_Xu)
 
     def covs_from_vector(v):
         i = 0
@@ -1028,6 +1194,10 @@ def optimize_gp_hyperparams(optimize_Xu=True,
         #    ll = np.float("-inf")
         #    grad = np.zeros((len(v),))
         print "hyperparams", v, "ll", ll, "grad", grad
+
+        if np.isnan(grad).any():
+            raise Exception('nanana')
+
         return -1 * ll, (-1 * grad  if grad is not None else None)
 
     def build_gp(v, **kwargs2):
@@ -1039,4 +1209,4 @@ def optimize_gp_hyperparams(optimize_Xu=True,
     x0 = np.concatenate([[noise_var,],
                          cov_main.flatten() if cov_main is not None else [],
                          cov_fic.flatten(include_xu = optimize_Xu) if cov_fic is not None else []])
-    return nllgrad, x0, build_gp, covs_from_vector
+    return nllgrad, x0, bounds, build_gp, covs_from_vector

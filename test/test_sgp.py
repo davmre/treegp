@@ -70,14 +70,14 @@ class TestGP(unittest.TestCase):
         self.gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
 
     def test_sparse_gradient(self):
-        g_sparse = self.gp._log_likelihood_gradient(None, None, None, self.gp.Kinv)
-        g_dense = self.gp._log_likelihood_gradient(None, None, None, self.gp.Kinv.todense())
+        g_sparse = self.gp._log_likelihood_gradient(None, None, self.gp.Kinv)
+        g_dense = self.gp._log_likelihood_gradient(None, None, self.gp.Kinv.todense())
         self.assertTrue( (np.abs(g_sparse - g_dense) < 0.0001 ).all() )
 
     def test_SE_gradient(self):
         grad = self.gp.ll_grad
 
-        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov)
+        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov)
 
         n = len(x0)
         kp  = x0
@@ -181,8 +181,8 @@ class TestSemiParametric(unittest.TestCase):
         # in the limit of a prior forcing the parameters to be zero,
         # the semiparametric likelihood should match that of a
         # standard GP.
-        gp_smallparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=np.eye(len(self.b)) * 0.000000000000001, compute_ll=True, sparse_threshold=0)
-        gp_noparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, dfn_str="euclidean", basis=None, compute_ll=True, sparse_threshold=0)
+        gp_smallparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=np.eye(len(self.b)) * 0.000000000000001, compute_ll=True, sparse_threshold=0)
+        gp_noparam = GP(X=self.X, y=self.y1, noise_var=self.noise_var, cov_main=self.cov, basis=None, compute_ll=True, sparse_threshold=0)
 
         self.assertGreater(self.gp.ll, gp_smallparam.ll)
         self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=-1)
@@ -191,7 +191,7 @@ class TestSemiParametric(unittest.TestCase):
     def test_gradient(self):
         grad = self.gp.ll_grad
 
-        nllgrad, x0, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov)
+        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov)
 
         n = len(x0)
         kp  = x0
@@ -207,6 +207,8 @@ class TestSemiParametric(unittest.TestCase):
             kp[i] -= eps
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
+        print grad
+        print empirical_grad
         self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
 
 

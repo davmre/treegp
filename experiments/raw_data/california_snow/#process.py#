@@ -1,0 +1,2 @@
+import pandas as pd
+df = pd.read_csv('r.txt', skiprows=1, na_values=['m'], keep_default_na=True, parse_dates=True)
