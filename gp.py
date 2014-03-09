@@ -182,7 +182,7 @@ class GP(object):
         return alpha, factor, L, Kinv
 
     def sparse_invert_kernel_matrix(self, K):
-        if type(K) == np.ndarray:
+        if type(K) == np.ndarray or type(K) == np.matrix:
             K = self.sparsify(K)
 
         alpha = None
@@ -221,7 +221,7 @@ class GP(object):
             M.eliminate_zeros()
             return M
         else:
-            return scipy.sparse.csc_matrix(np.asarray(M) * (np.abs(M) > self.sparse_threshold))
+            return scipy.sparse.csc_matrix(np.asarray(M) * np.asarray(np.abs(M) > self.sparse_threshold))
 
     def sort_events(self, X, y):
         combined = np.hstack([X, np.reshape(y, (-1, 1))])
@@ -323,9 +323,9 @@ class GP(object):
         K_fic_uu = self.kernel(self.cov_fic.Xu, self.cov_fic.Xu, identical=False, predict_tree = self.predict_tree_fic)
         Luu  = scipy.linalg.cholesky(K_fic_uu, lower=True)
         self.Luu = Luu
-        K_fic_un = self.kernel(Xu, X, identical=False, predict_tree = self.predict_tree_fic)
+        K_fic_un = self.kernel(self.cov_fic.Xu, self.X, identical=False, predict_tree = self.predict_tree_fic)
 
-        dc = self.covariance_diag_correction(X)
+        dc = self.covariance_diag_correction(self.X)
         diag_correction = scipy.sparse.dia_matrix((dc, 0), shape=K_cs.shape)
 
         K_cs = K_cs + diag_correction
@@ -418,16 +418,15 @@ class GP(object):
             H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
 
             if cov_fic is not None:
-                self.K, K_fic_uu, K_fic_un = init_csfic_kernel(self.K)
+                self.K, K_fic_uu, K_fic_un = self.init_csfic_kernel(self.K)
             else:
-                self.predict_tree_fic = None
                 K_fic_uu, K_fic_un = None, None
 
             # invert kernel matrix
             if sparse_invert:
                 alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
             else:
-                alpha, self.factor, L, Kinv = self.invert_kernel_matrix(K)
+                alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
             self.Kinv = self.sparsify(Kinv)
 
             #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
@@ -442,6 +441,7 @@ class GP(object):
                                                                                         Binv)
                 r = self.y - np.dot(HH.T, self.beta_bar)
                 self.alpha_r = np.reshape(np.asarray(self.factor(r)), (-1,))
+
                 z = np.dot(HH.T, b) - self.y
             else:
                 self.n_features = 0
@@ -471,7 +471,10 @@ class GP(object):
         else:
             tree_X = np.array([[0.0,] * self.X.shape[1],], dtype=float)
 
-        predict_tree = VectorTree(tree_X, 1, *self.cov_main.tree_params())
+        if self.cov_main is not None:
+            predict_tree = VectorTree(tree_X, 1, *self.cov_main.tree_params())
+        else:
+            predict_tree = None
 
         if self.cov_fic is not None:
             predict_tree_fic = VectorTree(tree_X, 1, *self.cov_fic.tree_params())
@@ -537,6 +540,7 @@ class GP(object):
             mean_pred = np.reshape(np.dot(H.T, self.beta_bar), gp_pred.shape)
             gp_pred += mean_pred
 
+
         if len(gp_pred) == 1:
             gp_pred = gp_pred[0]
 
@@ -545,7 +549,7 @@ class GP(object):
 
     def kernel(self, X1, X2, identical=False, predict_tree=None):
         predict_tree = self.predict_tree if predict_tree is None else predict_tree
-        K = self.predict_tree.kernel_matrix(X1, X2, False)
+        K = predict_tree.kernel_matrix(X1, X2, False)
         if identical:
             K += self.noise_var * np.eye(K.shape[0])
         return K
@@ -559,7 +563,7 @@ class GP(object):
             else:
                 max_distance = np.sqrt(-np.log(self.sparse_threshold)) # assuming a SE kernel
 
-        entries = self.predict_tree.sparse_training_kernel_matrix(X, max_distance)
+        entries = predict_tree.sparse_training_kernel_matrix(X, max_distance)
         spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,1], entries[:,0])), shape=(self.n, len(X)), dtype=float)
 
         if identical:
@@ -615,7 +619,7 @@ class GP(object):
         K_fic_un = self.kernel(self.cov_fic.Xu, X, identical=False, predict_tree = self.predict_tree_fic)
         B = scipy.linalg.solve(self.Luu, K_fic_un)
         Qvff = np.sum(B*B, axis=0)
-        return self.wfn_params_fic[0] - Qvff
+        return self.cov_fic.wfn_params[0] - Qvff
 
     def covariance_spkernel(self, cond, include_obs=False, parametric_only=False, pad=1e-8):
         X1 = self.standardize_input_array(cond)
@@ -890,8 +894,6 @@ class GP(object):
         if self.basis is not None:
             d['basis'] = self.basis
             d.update(self.featurizer_recovery)
-        else:
-            d['basis'] = np.empty(0)
         d['X']  = self.X,
         d['y'] =self.y,
         d['ymean'] = self.ymean,
@@ -940,10 +942,13 @@ class GP(object):
         self.ll = npzfile['ll'][0]
 
         self.n_features = int(npzfile['n_features'])
-        self.basis = str(npzfile['basis'])
-        if self.basis is not None and len(self.basis) > 0:
+
+
+        if 'basis' in npzfile:
+            self.basis = str(npzfile['basis'])
             self.featurizer, self.featurizer_recovery = recover_featurizer(self.basis, npzfile, transpose=True)
         else:
+            self.basis = None
             self.featurizer = None
             self.featurizer_recovery = None
 

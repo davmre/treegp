@@ -227,5 +227,153 @@ class TestSemiParametric(unittest.TestCase):
         self.assertTrue((v1 == v2).all())
 
 
+class TestCSFIC(unittest.TestCase):
+
+
+
+    def setUp(self):
+        N = 25
+        x = np.linspace(-5,5,N)
+        self.X = np.reshape(x, (-1, 1))
+
+        self.u = np.array(((-2.0,), (2.0,)))
+
+        def covar_matrix(x, k):
+            n = len(x)
+            K = np.zeros((n,n))
+            for i in range(n):
+                for j in range(n):
+                    K[i,j] = k(x[i], x[j])
+            return K
+        k1 = lambda x1, x2 : 1.0*np.exp( - ((x1-x2)/1.5)**2 ) + (1.0 if x1==x2 else 0)
+        K1 = covar_matrix(x, k1)
+
+        np.random.seed(0)
+        #self.y1 = np.random.multivariate_normal(mean=np.zeros((len(x),)), cov=K1)
+        self.y1 = np.array([-1.02804007, -1.54448568, -0.31653812, -0.46768499, 0.67463927, 1.06519473, -1.39472442, -0.72392324, -2.99133689, -0.59922449, -3.70430871, -1.75810012, -0.80376896, -0.50514541, -0.5459166, 1.6353825, -1.13032502, 0.80372166, -0.01374143, -1.16083918, -1.6099601, -4.37523678, -1.53780366, -2.98047752, -3.41214803])
+
+
+
+
+    def test_no_fic(self):
+        # a CSFIC GP with a trivial FIC component should be equivalent to a plain GP.
+
+        cov_main = GPCov(wfn_params=[1.0,], dfn_params=[ 2.5,], wfn_str="compact0", dfn_str="euclidean")
+        cov_fic_tiny = GPCov(wfn_params=[0.00000000000001,], dfn_params=[ 0.0000000000001,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+
+        gp1 = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = cov_fic_tiny,
+                 compute_ll=True,
+                 sparse_threshold=0,
+                 build_tree=False)
+
+        gp2 = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = None,
+                 compute_ll=True,
+                 sparse_threshold=0,
+                 build_tree=False)
+
+
+        x_test = np.linspace(-6,6,20)
+        pred1 = gp1.predict(np.reshape(x_test, (-1,1)))
+        pred2 = gp2.predict(np.reshape(x_test, (-1,1)))
+
+        self.assertTrue( ( np.abs(pred1-pred2) < 0.0001 ).all() )
+
+        self.assertAlmostEqual(gp1.ll, gp2.ll)
+
+
+    def test_no_cs(self):
+        # a CSFIC GP with a trivial CS component should be equivalent to a plain FIC GP.
+
+        # here we compare to "true" values from the GPStuff MATLAB toolbox on the same training data.
+        # the code to reproduce these is in test/matlab/no_cs.m.
+
+        cov_main_tiny = GPCov(wfn_params=[1e-15,], dfn_params=[ 1e-15,], wfn_str="compact0", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.0,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+
+        gp = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main_tiny,
+                 cov_fic = cov_fic,
+                 compute_ll=True,
+                 compute_grad=False,
+                 sparse_threshold=0,
+                 build_tree=False,
+                sparse_invert=False)
+
+        x_test = np.linspace(-6,6,20)
+        pred = gp.predict(np.reshape(x_test, (-1,1)))
+
+        true_pred = [-0.001009578312505, -0.007987369239529, -0.044328133303421, -0.172570712418792, -0.471267001236270, -0.902780793888510, -1.213226123858856, -1.144504376709686, -0.762372014152344, -0.378150072159795, -0.198456066738416, -0.207895507020449, -0.279193923665475, -0.292235035085667, -0.217163186457927, -0.113346671331517, -0.041505175187682, -0.010661391852200, -0.001921047707732, -0.000242814374795]
+        self.assertTrue( ( np.abs(pred-true_pred) < 0.001 ).all() )
+
+
+        true_ll = -52.1826173884063
+        self.assertAlmostEqual(true_ll, gp.ll, places=2)
+
+    def test_predict(self):
+        cov_main = GPCov(wfn_params=[1.0,], dfn_params=[ 2.5,], wfn_str="compact0", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.0,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+
+        gp = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = cov_fic,
+                 compute_ll=True,
+                 sparse_threshold=0,
+                 build_tree=False)
+
+
+        x_test = np.linspace(-6,6,20)
+        pred = gp.predict(np.reshape(x_test, (-1,1)))
+
+        true_pred = [-0.408347998350141, -0.562026829764370, -0.495194901764167, -0.221325067983013, -0.108486527530546, -0.382362268970377, -1.048794656436814, -1.603860074325163, -1.642537462422822, -1.301189117082765, -0.590641591880188,  0.013777393473535,  0.078987024190573, -0.060588451482957, -0.779405572439649, -1.566025186126343, -1.839795343563452, -1.918702553019862, -1.422525401522495, -0.783325324315960]
+        self.assertTrue( ( np.abs(pred-true_pred) < 0.001 ).all() )
+
+        true_ll = -45.986450666568985
+        self.assertAlmostEqual(true_ll, gp.ll, places=4)
+
+
+    def test_load_save(self):
+        cov_main = GPCov(wfn_params=[1.0,], dfn_params=[ 2.5,], wfn_str="compact0", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.0,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+
+        gp1 = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = cov_fic,
+                 compute_ll=True,
+                 sparse_threshold=0,
+                 build_tree=False)
+
+
+        gp1.save_trained_model("test_csfic.npz")
+        gp2 = GP(fname="test_csfic.npz", build_tree=False)
+
+        pts = np.reshape(np.linspace(-5, 5, 20), (-1, 1))
+        p1 = gp1.predict(pts)
+        v1 = gp1.variance(pts)
+        p2 = gp2.predict(pts)
+        v2 = gp2.variance(pts)
+
+        self.assertTrue((p1 == p2).all())
+        self.assertTrue((v1 == v2).all())
+
+
+
 if __name__ == '__main__':
     unittest.main()
