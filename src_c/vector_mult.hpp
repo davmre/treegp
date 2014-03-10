@@ -105,7 +105,9 @@ void halfsort (int * permutation, int num_children, node<T> * children)
 class VectorTree {
   node<point> root;
   distfn<point>::Type dfn;
-  dfn_deriv ddfn;
+  dfn_deriv ddfn_dx;
+  dfn_deriv ddfn_dtheta;
+  wfn_deriv dwfn_dr;
   void * dfn_extra;
   wfn w;
   double * wp;
@@ -128,6 +130,7 @@ public:
 
   pyublas::numpy_matrix<double> kernel_matrix(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, bool distance_only);
   pyublas::numpy_matrix<double> sparse_training_kernel_matrix(const pyublas::numpy_matrix<double> &pts, double max_distance);
+  pyublas::numpy_matrix<double> kernel_deriv_wrt_xi(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k);
   pyublas::numpy_matrix<double> kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i);
   pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i);
 

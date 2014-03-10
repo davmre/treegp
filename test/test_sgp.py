@@ -43,45 +43,33 @@ class TestGP(unittest.TestCase):
 
     def setUp(self):
         self.X = np.array([
-            [120, 30, 0, 1000, 32],
-            [118, 31, 0, 1050, 32],
-            [120, 29, 40, 1000, 34],
-            [110, 30, 20, 3000, 34],
+            [120, 30, 0, ],
+            [118, 31, 0, ],
+            [120, 29, 40,],
+            [110, 30, 20,],
         ], dtype=float)
         self.y = np.array([
-            -0.02,
-            -0.01,
-            -0.015,
-            -0.005,
+            -2.0,
+            -1.0,
+            -1.5,
+            -0.5,
         ])
-        self.evids = np.array([
-            1,
-            2,
-            3,
-            4,
-        ])
-        self.testX1 = np.array([[120, 30, 0, 1025, 32], ], dtype=float)
-        self.testX2 = np.array([[119, 31, 0, 1000, 33], ], dtype=float)
 
-        self.cov = GPCov(wfn_params=[.0187,], dfn_params=[ 9.00, 1.0], wfn_str="se", dfn_str="lld")
-        self.noise_var = .022
+        self.testX1 = np.array([[120, 30, 0,], ], dtype=float)
+        self.testX2 = np.array([[119, 31, 0,], ], dtype=float)
+
+        self.cov = GPCov(wfn_params=[2.0,], dfn_params=[ 900.00, 1000.0, ], wfn_str="compact2", dfn_str="lld")
+        self.noise_var = .22
 
 
-        self.gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
+    def _check_gradient(self, cov, eps=1e-8):
+        gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=cov, compute_ll=True, compute_grad=True)
 
-    def test_sparse_gradient(self):
-        g_sparse = self.gp._log_likelihood_gradient(None, None, self.gp.Kinv)
-        g_dense = self.gp._log_likelihood_gradient(None, None, self.gp.Kinv.todense())
-        self.assertTrue( (np.abs(g_sparse - g_dense) < 0.0001 ).all() )
-
-    def test_SE_gradient(self):
-        grad = self.gp.ll_grad
-
-        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov)
+        grad = gp.ll_grad
+        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=cov, sparse_invert=False)
 
         n = len(x0)
         kp  = x0
-        eps = 1e-4
         empirical_grad = np.zeros(n)
         for i in range(n):
             kp[i] -= eps
@@ -93,7 +81,26 @@ class TestGP(unittest.TestCase):
             kp[i] -= eps
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
-        self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
+        self.assertTrue( (np.abs(grad - empirical_grad) < 0.00001 ).all() )
+
+    def test_sparse_gradient(self):
+
+        gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
+        g_sparse = gp._log_likelihood_gradient(None, None, gp.Kinv)
+        g_dense = gp._log_likelihood_gradient(None, None, gp.Kinv.todense())
+        self.assertTrue( (np.abs(g_sparse - g_dense) < 0.0001 ).all() )
+
+    def test_SE_gradient(self):
+
+        cov1 = GPCov(wfn_params=[3.0,], dfn_params=[ 900.00, 1000.0, ], wfn_str="se", dfn_str="lld")
+        self._check_gradient(cov1)
+
+        cov2 = GPCov(wfn_params=[3.0,], dfn_params=[ 900.00, 1000.0, ], wfn_str="compact2", dfn_str="lld")
+        self._check_gradient(cov2)
+
+        cov3 = GPCov(wfn_params=[3.0,], dfn_params=[ 10.00, 10.0, 40.0], wfn_str="se", dfn_str="euclidean")
+        self._check_gradient(cov3)
+
 
 
     """
@@ -207,8 +214,6 @@ class TestSemiParametric(unittest.TestCase):
             kp[i] -= eps
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
-        print grad
-        print empirical_grad
         self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
 
 
@@ -222,7 +227,7 @@ class TestSemiParametric(unittest.TestCase):
         v1 = gp1.variance(pts)
         p2 = gp2.predict(pts)
         v2 = gp2.variance(pts)
-        print p1, p2
+
         self.assertTrue((p1 == p2).all())
         self.assertTrue((v1 == v2).all())
 
@@ -336,14 +341,19 @@ class TestCSFIC(unittest.TestCase):
                  build_tree=False)
 
 
-        x_test = np.linspace(-6,6,20)
-        pred = gp.predict(np.reshape(x_test, (-1,1)))
+        x_test = np.reshape(np.linspace(-6,6,20), (-1, 1))
+        pred = gp.predict(x_test)
 
         true_pred = [-0.408347998350141, -0.562026829764370, -0.495194901764167, -0.221325067983013, -0.108486527530546, -0.382362268970377, -1.048794656436814, -1.603860074325163, -1.642537462422822, -1.301189117082765, -0.590641591880188,  0.013777393473535,  0.078987024190573, -0.060588451482957, -0.779405572439649, -1.566025186126343, -1.839795343563452, -1.918702553019862, -1.422525401522495, -0.783325324315960]
-        self.assertTrue( ( np.abs(pred-true_pred) < 0.001 ).all() )
+        self.assertTrue( ( np.abs(pred-true_pred) < 1e-7 ).all() )
+
+
+        var = gp.variance(x_test)
+        true_var = [1.845225336549096, 1.656486150287482, 1.467352884081546, 1.383325051904399, 1.238510769551563, 0.823748649278482, 0.390452316432541, 0.493252719187497, 0.988398813692138, 1.290702032271763, 1.290702032271763, 0.988398813692137, 0.493252719187498, 0.390452316432541, 0.823748649278483, 1.238510769551562, 1.383325051904399, 1.467352884081546, 1.656486150287482, 1.845225336549096]
+        self.assertTrue( ( np.abs(var-true_var) < 1e-7 ).all() )
 
         true_ll = -45.986450666568985
-        self.assertAlmostEqual(true_ll, gp.ll, places=4)
+        self.assertAlmostEqual(true_ll, gp.ll, places=8)
 
 
     def test_load_save(self):
@@ -373,6 +383,40 @@ class TestCSFIC(unittest.TestCase):
         self.assertTrue((p1 == p2).all())
         self.assertTrue((v1 == v2).all())
 
+    def test_gradient(self):
+        cov_main = GPCov(wfn_params=[1.0,], dfn_params=[ 2.5,], wfn_str="compact2", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.0,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+
+        gp = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = cov_fic,
+                 compute_ll=True,
+                 compute_grad=True,
+                 sparse_threshold=0,
+                 build_tree=False)
+
+        grad = gp.ll_grad
+
+        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, sparse_threshold=0)
+
+        n = len(x0)
+        kp  = x0
+        eps = 1e-6
+        empirical_grad = np.zeros(n)
+        for i in range(n):
+            kp[i] -= eps
+            gp1 = build_gp(kp, compute_ll=True)
+            l1 = gp1.log_likelihood()
+            kp[i] += 2*eps
+            gp2 = build_gp(kp, compute_ll=True)
+            l2 = gp2.log_likelihood()
+            kp[i] -= eps
+            empirical_grad[i] = (l2 - l1)/ (2*eps)
+
+        self.assertTrue( (np.abs(grad - empirical_grad) < 1e-6 ).all() )
 
 
 if __name__ == '__main__':

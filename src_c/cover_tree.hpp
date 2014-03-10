@@ -35,19 +35,34 @@ template<typename T> struct distfn {
 
 typedef double (*partial_dfn)(const double *, const double *, double, const double*, const void*);
 
-typedef double (*dfn_deriv)(int, const double *, const double *,  const double *, const double *, const double *);
 
+typedef double (*dfn_deriv)(const double *, const double *,  int i, double, double, const double *, void *);
 
 double dist_euclidean(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *dims);
 double dist_euclidean(const double *, const double *, double BOUND_IGNORED, const double *scales, const void *dims);
 double sqdist_euclidean(const double *, const double *, double BOUND_IGNORED, const double *scales, const void *dims);
 double pair_dist_euclidean(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *scales, void *dims);
+double dist_euclidean_deriv_wrt_xi(const double *p1, const double *p2, int i, double d, double BOUND_IGNORED, const double *scales, void *dims);
+double dist_euclidean_deriv_wrt_theta(const double *p1, const double *p2, int i, double d, double BOUND_IGNORED, const double *scales, void *dims);
+
 double dist_km(const double *p1, const double *p2);
 double dist_3d_km(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void * extra);
 double dist_3d_km(const double * p1, const double*  p2, double BOUND_IGNORED, const double *scales, const void * extra);
 double distsq_3d_km(const double * p1, const double*  p2, double BOUND_IGNORED, const double *scales, const void * extra);
 double pair_dist_3d_km(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *scales, void * extra);
+double dist3d_deriv_wrt_theta(const double *p1, const double *p2, int i, double d, double BOUND_IGNORED, const double *scales, void *dims);
+
+double dist_6d_km(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *extra);
+double dist_6d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales, const void *extra);
+double distsq_6d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales,const void *extra);
+double pair_dist_6d_km(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *scales, void * extra);
+double dist6d_deriv_wrt_theta(const double *p1, const double *p2, int i, double d, double BOUND_IGNORED, const double *scales, void *dims);
+
+typedef double (*wfn)(double, const double *);
+typedef double (*wfn_deriv)(double, double, const double*);
+
 double w_se(double d, const double * variance);
+double deriv_se_wrt_r(double r, double dr_dtheta, const double *variance);
 double w_e(double d, const double * variance);
 double w_matern32(double d, const double * variance);
 double w_matern32_upper(double d, const double * variance);
@@ -56,20 +71,11 @@ double w_compact_q0(double d, const double * extra);
 double w_compact_q0_upper(double d, const double * extra);
 double w_compact_q0_lower(double d, const double * extra);
 double w_compact_q2(double d, const double * extra);
+double deriv_compact_q2_wrt_r(double r, double dr_dtheta, const double *extra);
 double w_compact_q2_upper(double d, const double * extra);
 double w_compact_q2_lower(double d, const double * extra);
 
-double dist3d_se_deriv_wrt_i(int i, const double * p1, const double * p2,  const double *variance, const double *scales, const double *EXTRA_IGNORED);
-double dist3d_compact2_deriv_wrt_i(int i, const double * p1, const double * p2,  const double *extra, const double *scales, const double *dims);
-double euclidean_se_deriv_wrt_i(int i, const double * p1, const double * p2, const double *variance, const double *scales, const double *dims);
-double euclidean_compact2_deriv_wrt_i(int i, const double * p1, const double * p2, const double *extra, const double *scales, const double *dims);
-typedef double (*wfn)(double, const double *);
 
-double dist_6d_km(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *extra);
-double dist_6d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales, const void *extra);
-double distsq_6d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales,const void *extra);
-double dist6d_se_deriv_wrt_i(int i, const double * p1, const double * p2, const double * variance, const double *scales, const double *EXTRA_IGNORED);
-double pair_dist_6d_km(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *scales, void * extra);
 
 
 template<class T>

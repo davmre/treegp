@@ -188,16 +188,22 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
     points[i] = p;
   }
   this->n = pts.size1();
+  this->ddfn_dtheta = NULL;
+  this->ddfn_dx = NULL;
   if (distfn_str.compare("lld") == 0) {
     this->dfn = dist_3d_km;
     this->dfn_extra = NULL;
+    this->ddfn_dtheta = dist3d_deriv_wrt_theta;
   } else if (distfn_str.compare("euclidean") == 0) {
     this->dfn = dist_euclidean;
     this->dfn_extra = malloc(sizeof(int));
+    this->ddfn_dx = dist_euclidean_deriv_wrt_xi;
+    this->ddfn_dtheta = dist_euclidean_deriv_wrt_theta;
     *((int *) this->dfn_extra) = pts.size2();
   } else if (distfn_str.compare("lldlld") == 0) {
     this->dfn = dist_6d_km;
     this->dfn_extra = NULL;
+    this->ddfn_dtheta = dist6d_deriv_wrt_theta;
   } else {
     printf("error: unrecognized distance function %s\n", distfn_str.c_str());
     exit(1);
@@ -205,28 +211,18 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
 
   this->dist_params = NULL;
   this->set_dist_params(dist_params);
-  this->ddfn = NULL;
+
+  this->dwfn_dr = NULL;
   if (wfn_str.compare("se") == 0) {
     this->w = w_se;
-
-    if (distfn_str.compare("lld") == 0) {
-      this->ddfn = dist3d_se_deriv_wrt_i;
-    } else if (distfn_str.compare("euclidean") == 0) {
-      this->ddfn = euclidean_se_deriv_wrt_i;
-    } else if (distfn_str.compare("lldlld") == 0){
-      this->ddfn = dist6d_se_deriv_wrt_i;
-    }
+    this->dwfn_dr = deriv_se_wrt_r;
   } else if (wfn_str.compare("matern32") == 0) {
     this->w = w_matern32;
   } else if (wfn_str.compare("compact0") == 0) {
     this->w = w_compact_q0;
   } else if (wfn_str.compare("compact2") == 0) {
     this->w = w_compact_q2;
-    if (distfn_str.compare("euclidean") == 0) {
-      this->ddfn = euclidean_compact2_deriv_wrt_i;
-    } else if (distfn_str.compare("lld") == 0) {
-      this->ddfn = dist3d_compact2_deriv_wrt_i;
-    }
+    this->dwfn_dr = deriv_compact_q2_wrt_r;
   } else {
     printf("error: unrecognized weight function %s\n", wfn_str.c_str());
     exit(1);
@@ -334,12 +330,56 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
   return K;
 }
 
-pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i) {
+pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k) {
+  // deriv of kernel matrix with respect to k'th component of the 'ith input point.
+
+  if (this->ddfn_dx == NULL) {
+    printf("ERROR: gradient not implemented for this distance function.\n");
+    exit(1);
+  }
+  if (this->dwfn_dr == NULL) {
+    printf("ERROR: gradient not implemented for this weight function.\n");
+    exit(1);
+  }
 
   pyublas::numpy_matrix<double> K(pts1.size1(), pts2.size1());
-  if (this->ddfn == NULL) {
-    printf("ERROR: gradient not implemented for this kernel.\n");
+  for(unsigned i = 0; i < pts1.size1 (); ++ i) {
+    for (unsigned j = 0; j < pts2.size1 (); ++ j) {
+      K(i,j) = 0;
+    }
+  }
+
+  point p1 = {&pts1(i, 0), 0};
+  for (unsigned j = 0; j < pts2.size1 (); ++ j) {
+    point p2 = {&pts2(j, 0), 0};
+    double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    K(i,j) = this->dwfn_dr(r, dr_dp1, this->wp);
+  }
+
+  return K;
+}
+
+
+pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i) {
+
+  if (this->ddfn_dtheta == NULL) {
+    printf("ERROR: gradient not implemented for this distance function.\n");
     exit(1);
+  }
+  if (this->dwfn_dr == NULL) {
+    printf("ERROR: gradient not implemented for this weight function.\n");
+    exit(1);
+  }
+
+
+  pyublas::numpy_matrix<double> K(pts1.size1(), pts2.size1());
+
+
+  for(unsigned i = 0; i < pts1.size1 (); ++ i) {
+    for (unsigned j = 0; j < pts2.size1 (); ++ j) {
+      K(i,j) = 0;
+    }
   }
 
 
@@ -347,7 +387,9 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
     point p1 = {&pts1(i, 0), 0};
     for (unsigned j = 0; j < pts2.size1 (); ++ j) {
       point p2 = {&pts2(j, 0), 0};
-      K(i,j) = this->ddfn(param_i, p1.p, p2.p, this->wp, this->dist_params, (const double *)this->dfn_extra);
+      double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
+      double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+      K(i,j) = this->dwfn_dr(r, dr_dtheta, this->wp);
     }
   }
 
@@ -357,15 +399,22 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
 pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i) {
 
   pyublas::numpy_vector<double> entries(nzr.size());
-  if (this->ddfn == NULL) {
-    printf("ERROR: gradient not implemented for this kernel.\n");
+  if (this->ddfn_dtheta == NULL) {
+    printf("ERROR: gradient not implemented for this distance function.\n");
+    exit(1);
+  }
+  if (this->dwfn_dr == NULL) {
+    printf("ERROR: gradient not implemented for this weight function.\n");
     exit(1);
   }
 
   for (unsigned i = 0; i < nzr.size(); ++ i) {
     point p1 = {&pts1(nzr[i], 0), 0};
     point p2 = {&pts2(nzc[i], 0), 0};
-    entries[i] = this->ddfn(param_i, p1.p, p2.p, this->wp, this->dist_params,  (const double *)this->dfn_extra);
+
+    double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    entries[i] = this->dwfn_dr(r, dr_dtheta, this->wp);
   }
 
   return entries;
@@ -395,6 +444,7 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("weighted_sum", &VectorTree::weighted_sum)
     .def("kernel_matrix", &VectorTree::kernel_matrix)
     .def("sparse_training_kernel_matrix", &VectorTree::sparse_training_kernel_matrix)
+    .def("kernel_deriv_wrt_xi", &VectorTree::kernel_deriv_wrt_xi)
     .def("kernel_deriv_wrt_i", &VectorTree::kernel_deriv_wrt_i)
     .def("sparse_kernel_deriv_wrt_i", &VectorTree::sparse_kernel_deriv_wrt_i)
     .def_readonly("fcalls", &VectorTree::fcalls);
