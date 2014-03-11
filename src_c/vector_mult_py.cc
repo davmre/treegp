@@ -200,6 +200,12 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
     this->ddfn_dx = dist_euclidean_deriv_wrt_xi;
     this->ddfn_dtheta = dist_euclidean_deriv_wrt_theta;
     *((int *) this->dfn_extra) = pts.size2();
+
+    if (dist_params.size() != pts.size2()) {
+      printf("ERROR: computing Euclidean distances in %d dimensions, but only %d lengthscales specified!\n", pts.size2(), dist_params.size());
+      exit(-1);
+    }
+
   } else if (distfn_str.compare("lldlld") == 0) {
     this->dfn = dist_6d_km;
     this->dfn_extra = NULL;

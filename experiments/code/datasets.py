@@ -52,15 +52,19 @@ def save_hparams(dataset_name, model_name, cov_main, cov_fic, noise_var, tag=Non
     with open(hparam_file, 'w') as f:
         pickle.dump(hparams, f)
 
-def gp_fname(dataset_name, model_name, n=None):
-    fname = "trained.gp" if n is None else "trained_%d.gp" % n
+def gp_fname(dataset_name, model_name, n=None, tag=None):
+    tstr = "" if tag is None else "_%s" % tag
+    fname = "trained.gp" if n is None else "trained%s_%d.gp" % (tag, n)
     return os.path.join(BASEDIR, "models", dataset_name, model_name, fname)
 
-def predict_results_fname(dataset_name, model_name):
-    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'accuracy.txt')
+def predict_results_fname(dataset_name, model_name, tag):
+    tstr = "" if tag is None else "_%s" % tag
+    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'accuracy%s.txt' % tstr)
 
-def timing_results_fname(dataset_name, model_name):
-    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'timings.txt')
+def timing_results_fname(dataset_name, model_name, tag):
+    tstr = "" if tag is None else "_%s" % tag
+    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'timings%s.txt' % tstr)
 
-def timing_errors_fname(dataset_name, model_name):
-    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'error.npz')
+def timing_errors_fname(dataset_name, model_name, tag):
+    tstr = "" if tag is None else "_%s" % tag
+    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'error%s.npz' % tstr)

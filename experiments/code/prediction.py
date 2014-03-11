@@ -4,14 +4,15 @@ import numpy as np
 import scipy.io
 
 from sparsegp.gp import GP
-from sparsegp.experiments.datasets import *
 from sparsegp.distributions import Gaussian
+
+from datasets import *
 
 from optparse import OptionParser
 
-def test_predict(dataset_name, model_name, sgp=None, n=None):
+def test_predict(dataset_name, model_name, sgp=None, n=None, tag=None):
 
-    sgp = trained_gp(dataset_name, model_name, n=n) if sgp is None else None
+    sgp = trained_gp(dataset_name, model_name, n=n, tag=tag) if sgp is None else None
     X_test, y_test = test_data(dataset_name)
     print "loaded GP, evaluating predictive performance on %d test points..." % len(y_test)
 
@@ -41,7 +42,7 @@ def test_predict(dataset_name, model_name, sgp=None, n=None):
 
     msll = np.mean(test_lps - baseline_lps)
 
-    outfile = predict_results_fname(dataset_name, model_name)
+    outfile = predict_results_fname(dataset_name, model_name, tag)
     with open(outfile, "w") as f:
         f.write("msll %f\n" % msll)
         f.write("smse: %f\n" % smse)
@@ -53,14 +54,14 @@ def test_predict(dataset_name, model_name, sgp=None, n=None):
         f.write("model lp %f\n" % np.sum(test_lps))
     print "saved results to", outfile
 
-def trained_gp(dataset_name, model_name, n=None, **kwargs):
+def trained_gp(dataset_name, model_name, n=None, tag=None, **kwargs):
 
-    fname = gp_fname(dataset_name, model_name, n=n)
+    fname = gp_fname(dataset_name, model_name, n=n, tag=tag)
     if os.path.exists(fname):
         return GP(fname=fname, **kwargs)
 
     X_train, y_train = training_data(dataset_name, n=n)
-    cov_main, cov_fic, noise_var = load_hparams(dataset_name, model_name)
+    cov_main, cov_fic, noise_var = load_hparams(dataset_name, model_name, tag=tag)
 
     "print training GP for", dataset_name, model_name
     sgp = GP(X=X_train, y=y_train,
@@ -78,7 +79,11 @@ def main():
     # inputs
     dataset_name = sys.argv[1]
     model_name = sys.argv[2]
-    test_predict(dataset_name, model_name, n=1000)
+    if len(sys.argv) > 3:
+        tag = sys.argv[3]
+    else:
+        tag = None
+    test_predict(dataset_name, model_name, tag=tag)
 
     #print "timings finished"
 

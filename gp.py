@@ -94,7 +94,7 @@ class GPCov(object):
         self.wfn_params = np.array(wfn_params, dtype=float)
         self.dfn_str = str(dfn_str)
         self.dfn_params = np.array(dfn_params, dtype=float)
-        self.Xu = Xu
+        self.Xu = np.asarray(Xu) if Xu is not None else None
 
         self.wfn_priors = wfn_priors
         self.dfn_priors = dfn_priors
@@ -129,8 +129,8 @@ class GPCov(object):
         return prior_ll(self.dfn_params, self.dfn_priors) + prior_ll(self.wfn_params, self.wfn_priors)
 
     def prior_grad(self, include_xu=True):
-        v = np.concatenate([prior_grad(self.dfn_params, self.dfn_priors) ,
-                            prior_grad(self.wfn_params, self.wfn_priors)])
+        v = np.concatenate([prior_grad(self.wfn_params, self.wfn_priors) ,
+                            prior_grad(self.dfn_params, self.dfn_priors)])
         if include_xu and self.Xu is not None:
             v = np.concatenate([v, np.zeros((self.Xu.size,))])
         return v
@@ -359,6 +359,7 @@ class GP(object):
                  featurizer_recovery=None,
                  compute_ll=False,
                  compute_grad=False,
+                 compute_xu_grad=False,
                  sparse_threshold=1e-10,
                  K = None,
                  sort_events=False,
@@ -462,7 +463,7 @@ class GP(object):
             else:
                 self.ll = -np.inf
             if compute_grad:
-                self.ll_grad = self._log_likelihood_gradient(z=z, H=HH, Kinv=self.Kinv)
+                self.ll_grad = self._log_likelihood_gradient(z=z, H=HH, Kinv=self.Kinv, include_xu=compute_xu_grad)
 
 
     def build_initial_single_trees(self, build_tree = False):
@@ -557,6 +558,7 @@ class GP(object):
     def sparse_kernel(self, X, identical=False, predict_tree=None, max_distance=None):
         predict_tree = self.predict_tree if predict_tree is None else predict_tree
 
+
         if max_distance is None:
             if self.sparse_threshold ==0:
                 max_distance = 1e300
@@ -565,6 +567,7 @@ class GP(object):
 
         entries = predict_tree.sparse_training_kernel_matrix(X, max_distance)
         spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,1], entries[:,0])), shape=(self.n, len(X)), dtype=float)
+
 
         if identical:
             spK = spK + self.noise_var * scipy.sparse.eye(spK.shape[0])
@@ -973,6 +976,8 @@ class GP(object):
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 
+
+
     def _compute_marginal_likelihood(self, L, z, Binv, H, K, Kinv):
 
         if scipy.sparse.issparse(L):
@@ -1148,6 +1153,7 @@ class GP(object):
     def get_dKdi_dense_fic_dfn(self, i):
         dKuu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.cov_fic.Xu, self.cov_fic.Xu, i)
         dKnu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.X, self.cov_fic.Xu, i)
+
         return self.get_dKdi_dense_fic(dKuu_di, dKnu_di)
 
     def get_dKdi_dense_fic_inducing(self, p, i):
@@ -1285,7 +1291,8 @@ def sparsegp_ll_grad(priors=None, **kwargs):
 
 def optimize_gp_hyperparams(optimize_Xu=True,
                             noise_var=1.0, noise_prior=None,
-                            cov_main=None, cov_fic=None, **kwargs):
+                            cov_main=None, cov_fic=None,
+                            allow_diag=False, **kwargs):
 
     n_mean_wfn = len(cov_main.wfn_params) if cov_main is not None else 0
     n_mean_dfn = len(cov_main.dfn_params) if cov_main is not None else 0
@@ -1335,12 +1342,27 @@ def optimize_gp_hyperparams(optimize_Xu=True,
 
         return noise_var, new_cov_main, new_cov_fic
 
+    def _nll(v):
+        noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)
+        gp = GP(compute_ll=True, compute_grad=True, compute_xu_grad =optimize_Xu, noise_var=noise_var,
+                cov_main=new_cov_main, cov_fic=new_cov_fic, **kwargs)
+        return gp.ll
+
+    def approx_gradient(f, x0, eps):
+        n = len(x0)
+        grad = np.zeros((n,))
+        fx0 = f(x0)
+        for i in range(n):
+            x_new = x0.copy()
+            x_new[i] += eps
+            grad[i] = (f(x_new) - fx0) / eps
+        return grad
 
     def nllgrad(v):
         noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)
 
         try:
-            gp = GP(compute_ll=True, compute_grad=True, noise_var=noise_var,
+            gp = GP(compute_ll=True, compute_grad=True, compute_xu_grad =optimize_Xu, noise_var=noise_var,
                     cov_main=new_cov_main, cov_fic=new_cov_fic, **kwargs)
             ll = gp.ll
             grad = gp.ll_grad
@@ -1348,9 +1370,13 @@ def optimize_gp_hyperparams(optimize_Xu=True,
             ll += noise_prior.log_p(noise_var) + \
                   ( new_cov_main.prior_logp() if new_cov_main is not None else 0 ) + \
                   ( new_cov_fic.prior_logp() if new_cov_fic is not None else 0 )
-            grad += np.concatenate([[noise_prior.deriv_log_p(noise_var)],
+            prior_grad = np.concatenate([[noise_prior.deriv_log_p(noise_var)],
                                     new_cov_main.prior_grad() if new_cov_main is not None else [],
                                     new_cov_fic.prior_grad(include_xu=optimize_Xu) if new_cov_fic is not None else []])
+            grad += prior_grad
+
+
+
 
         except FloatingPointError as e:
             print "warning: floating point error (%s) in likelihood computation, returning likelihood -inf" % str(e)
@@ -1369,12 +1395,14 @@ def optimize_gp_hyperparams(optimize_Xu=True,
         #    print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
         #    ll = np.float("-inf")
         #    grad = np.zeros((len(v),))
-        print "hyperparams", v, "ll", ll, "grad", grad
+        print "hyperparams", v, "ll", ll, 'grad', grad
 
         if np.isnan(grad).any():
             raise Exception('nanana')
 
         return -1 * ll, (-1 * grad  if grad is not None else None)
+
+
 
     def build_gp(v, **kwargs2):
         noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)

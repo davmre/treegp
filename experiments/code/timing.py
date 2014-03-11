@@ -9,16 +9,16 @@ from scikits.sparse.cholmod import cholesky as sp_cholesky
 import scipy.sparse
 import scipy.stats
 
-from sparsegp.experiments.datasets import *
-from sparsegp.experiments.prediction import trained_gp
+from datasets import *
+from prediction import trained_gp
 
-def eval_gp(dataset_name, model_name, sgp=None, n=None, test_n=None, cutoff_rule=1):
+def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, cutoff_rule=1):
     X_test, y_test = test_data(dataset_name)
-    gp = trained_gp(dataset_name, model_name, n=n, build_tree=True)
+    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True)
     print "loaded GP, evaluating timings on %d test points..." % test_n
 
-    resultfile = timing_results_fname(dataset_name, model_name)
-    errorfile = timing_errors_fname(dataset_name, model_name)
+    resultfile = timing_results_fname(dataset_name, model_name, tag)
+    errorfile = timing_errors_fname(dataset_name, model_name, tag)
 
     if test_n is None:
         test_n = len(X_test)
@@ -218,7 +218,12 @@ def main():
     # inputs
     dataset_name = sys.argv[1]
     model_name = sys.argv[2]
-    eval_gp(dataset_name, model_name, n=1000, test_n=100)
+    if len(sys.argv) > 3:
+        tag = sys.argv[3]
+    else:
+        tag = None
+
+    eval_gp(dataset_name, model_name, test_n=100, tag=tag)
 
     #print "timings finished"
 
