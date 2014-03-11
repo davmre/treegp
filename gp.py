@@ -182,9 +182,6 @@ class GP(object):
         return alpha, factor, L, Kinv
 
     def sparse_invert_kernel_matrix(self, K):
-        if type(K) == np.ndarray or type(K) == np.matrix:
-            K = self.sparsify(K)
-
         alpha = None
         t0 = time.time()
         factor = scikits.sparse.cholmod.cholesky(K)
@@ -425,6 +422,8 @@ class GP(object):
 
             # invert kernel matrix
             if sparse_invert:
+                if type(self.K) == np.ndarray or type(self.K) == np.matrix:
+                    self.K = self.sparsify(self.K)
                 alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
             else:
                 alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
@@ -770,7 +769,7 @@ class GP(object):
             t1 = time.time()
             H = self.get_data_features(X1)
             #H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=np.float64)
-            HKinvKstar = np.zeros((d, m))
+            HKinvKstar = np.zeros((self.n_features, m))
 
             for i in range(self.n_features):
                 for j in range(m):

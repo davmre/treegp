@@ -7,3 +7,5 @@ build*
 *.npz
 *.so
 *.#*
+experiments/datasets/*
+experiments/models/*
