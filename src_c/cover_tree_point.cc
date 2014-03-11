@@ -386,9 +386,9 @@ void batch_nearest_neighbor(const node<point> &top_node, const node<point> &quer
   v_array<d_node> zero_set = pop(spare_zero_sets);
 
   double* upper_bound = alloc_upper();
-  setter(upper_bound,MAXDOUBLE);
+  setter(upper_bound,std::numeric_limits< double >::max());
 
-  double top_dist = distance(query.p, top_node.p, MAXDOUBLE, dist_params, dist_extra);
+  double top_dist = distance(query.p, top_node.p, std::numeric_limits< double >::max(), dist_params, dist_extra);
   update(upper_bound, top_dist);
   d_node temp = {top_dist, &top_node};
   push(cover_sets[0], temp);

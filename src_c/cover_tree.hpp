@@ -11,8 +11,7 @@
 #include <vector>
 #include "stack.h"
 
-#include <limits.h>
-#include <values.h>
+#include <limits>
 #include <stdint.h>
 #include <iostream>
 
@@ -348,7 +347,7 @@ node<T> batch_insert(const ds_node<T>& p,
       //printf("p %f %f %f %f\n", p.p.pt1[0], p.p.pt1[1], p.p.pt2[0], p.p.pt2[1]);
       //printf("p %f %f\n", p.p.p[0], p.p.p[1]);
       //printf("ps %f %f %f %f\n", point_set[0].p.pt1[0], point_set[0].p.pt1[1], point_set[0].p.pt2[0], point_set[0].p.pt2[1]);
-      printf("distance %f\n", distance(point_set[0].p, p.p, MAXDOUBLE, dist_params, dist_extra));
+      printf("distance %f\n", distance(point_set[0].p, p.p, std::numeric_limits< double >::max(), dist_params, dist_extra));
       }*/
 
     if ((next_scale == -2147483648) || (top_scale - next_scale >= 100)) // We have points with distance 0.
@@ -451,7 +450,7 @@ template<class T> node<T> batch_create(const std::vector<T> &points,
   initial_pt.p = points[0];
   for (std::vector<point>::size_type i = 1; i < points.size(); i++) {
     ds_node<T> temp;
-    push(temp.dist, distance(points[0], points[i], MAXDOUBLE, dist_params, dist_extra));
+    push(temp.dist, distance(points[0], points[i], std::numeric_limits< double >::max(), dist_params, dist_extra));
     temp.p = points[i];
     push(point_set,temp);
   }
