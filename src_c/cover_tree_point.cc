@@ -1,6 +1,5 @@
 #include "cover_tree.hpp"
-#include <limits.h>
-#include <values.h>
+#include <limits>
 #include <stdint.h>
 #include <iostream>
 #include <stdio.h>

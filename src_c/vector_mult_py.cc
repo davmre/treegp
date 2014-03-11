@@ -10,8 +10,8 @@
 #include <cmath>
 #include <memory>
 #include <vector>
-#include <limits.h>
-#include <values.h>
+#include <limits>
+
 
 using namespace std;
 namespace bp = boost::python;
@@ -75,7 +75,7 @@ double weighted_sum_node(node<point> &n, int v_select,
       }
 
       for(int i=0; i < n.num_children; ++i) {
-	n.children[i].distance_to_query = dist(query_pt, n.children[i].p, MAXDOUBLE, dist_params, dist_extra);
+	n.children[i].distance_to_query = dist(query_pt, n.children[i].p, std::numeric_limits< double >::max(), dist_params, dist_extra);
 	permutation[i] = i;
       }
       halfsort(permutation, n.num_children, n.children);
@@ -127,7 +127,7 @@ double VectorTree::weighted_sum(int v_select, const pyublas::numpy_matrix<double
   }
 
 
-  this->root.distance_to_query = this->dfn(qp, this->root.p, MAXDOUBLE, this->dist_params, this->dfn_extra);
+  this->root.distance_to_query = this->dfn(qp, this->root.p, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
   double ws = weighted_sum_node(this->root, v_select,
 				qp, eps, weight_sofar,
 				fcalls, this->w,
@@ -282,7 +282,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_matrix(const pyublas::numpy_mat
     point p1 = {&pts1(i, 0), 0};
     for (unsigned j = 0; j < pts2.size1 (); ++ j) {
       point p2 = {&pts2(j, 0), 0};
-      double d = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
+      double d = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
       K(i,j) = distance_only ? d : this->w(d, this->wp);
     }
   }
@@ -321,7 +321,7 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
       point p2 = res[0][jj];
       int j = p2.idx;
 
-      double d = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
+      double d = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
       if (nzero == K.size1()) {
 	K.resize(K.size1()*2, 3);
       }
@@ -358,8 +358,8 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
   point p1 = {&pts1(i, 0), 0};
   for (unsigned j = 0; j < pts2.size1 (); ++ j) {
     point p2 = {&pts2(j, 0), 0};
-    double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
-    double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     K(i,j) = this->dwfn_dr(r, dr_dp1, this->wp);
   }
 
@@ -393,8 +393,8 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
     point p1 = {&pts1(i, 0), 0};
     for (unsigned j = 0; j < pts2.size1 (); ++ j) {
       point p2 = {&pts2(j, 0), 0};
-      double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
-      double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+      double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+      double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
       K(i,j) = this->dwfn_dr(r, dr_dtheta, this->wp);
     }
   }
@@ -418,8 +418,8 @@ pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyubla
     point p1 = {&pts1(nzr[i], 0), 0};
     point p2 = {&pts2(nzc[i], 0), 0};
 
-    double r = this->dfn(p1, p2, MAXDOUBLE, this->dist_params, this->dfn_extra);
-    double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, MAXDOUBLE, this->dist_params, this->dfn_extra);
+    double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     entries[i] = this->dwfn_dr(r, dr_dtheta, this->wp);
   }
 

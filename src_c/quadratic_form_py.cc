@@ -4,14 +4,14 @@
  #include <cmath>
  #include <memory>
  #include <vector>
- #include <limits.h>
- #include <values.h>
+ #include <limits>
  #include <google/dense_hash_map>
  using google::dense_hash_map;
 
  using namespace std;
  namespace bp = boost::python;
 
+/*
  double gt(void)
  {
    struct timespec tv;
@@ -20,7 +20,10 @@
 
    return (((double) tv.tv_sec) + (double) (tv.tv_nsec / 1000000000.0));
  }
-
+*/
+double gt(void) {
+  return 1000.0;
+}
 
  double first_half_d_query_cached(const pairpoint &p1, const pairpoint &p2, double BOUND_IGNORED, const double *params, pair_dfn_extra *p) {
    dense_hash_map<int, double> &query_cache =  *(p->query1_cache);
@@ -176,8 +179,8 @@
        // w_point takes an *intermediate* representation of the
        // distance, e.g. squared distance in the case of the SE
        // kernels.
-       weight = w_point(first_half_d_query_cached(query_pt, n.p, MAXDOUBLE, dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.p, MAXDOUBLE, dist_params, dist_extra), wp_point);
+       weight = w_point(first_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+	 * w_point(second_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
      }
      ws += weight * n.unweighted_sums[v_select];
 
@@ -202,8 +205,8 @@
 
      double exact_sum = 0;
      for (unsigned int i=0; i < n.n_extra_p; ++i) {
-       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], MAXDOUBLE, dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.extra_p[i], MAXDOUBLE, dist_params, dist_extra), wp_point);
+       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+	 * w_point(second_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
 
@@ -279,7 +282,7 @@
      }
 
      for(int i=0; i < n.num_children; ++i) {
-       n.children[i].distance_to_query = dist(query_pt, n.children[i].p, MAXDOUBLE, dist_params, dist_extra);
+       n.children[i].distance_to_query = dist(query_pt, n.children[i].p, std::numeric_limits< double >::max(), dist_params, dist_extra);
        permutation[i] = i;
        //printf("%.4f ", n.children[i].distance_to_query);
      }
@@ -378,7 +381,7 @@
    node<pairpoint> *n = orig_n;
    bool printed_root = false;
    while (n != NULL) {
-     printf("pidx (%d, %d) t1 (%.4f %.4f) pt2 (%.4f %.4f) dist_to_p %.4f max_dist %.4f parent_dist %.4f num_children %d num_leaves %d scale %d\n", n->p.idx1, n->p.idx2, n->p.pt1[0], n->p.pt1[1], n->p.pt2[0], n->p.pt2[1], this->raw_pair_dfn(n->p, orig_n->p, MAXDOUBLE, this->dist_params, this->dfn_extra->dfn_extra), n->max_dist, n->parent_dist, n->num_children, n->num_leaves, n->scale);
+     printf("pidx (%d, %d) t1 (%.4f %.4f) pt2 (%.4f %.4f) dist_to_p %.4f max_dist %.4f parent_dist %.4f num_children %d num_leaves %d scale %d\n", n->p.idx1, n->p.idx2, n->p.pt1[0], n->p.pt1[1], n->p.pt2[0], n->p.pt2[1], this->raw_pair_dfn(n->p, orig_n->p, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra->dfn_extra), n->max_dist, n->parent_dist, n->num_children, n->num_leaves, n->scale);
 
      n = n->debug_parent;
    }
@@ -470,9 +473,9 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    double ws = 0;
 
    int fcalls = 0;
-   this->root_diag.distance_to_query = this->factored_query_dist(qp, this->root_diag.p, MAXDOUBLE, this->dist_params, (void*)this->dfn_extra);
+   this->root_diag.distance_to_query = this->factored_query_dist(qp, this->root_diag.p, std::numeric_limits< double >::max(), this->dist_params, (void*)this->dfn_extra);
    if (this->use_offdiag) {
-     this->root_offdiag.distance_to_query = this->factored_query_dist(qp, this->root_offdiag.p, MAXDOUBLE, this->dist_params, (void*)this->dfn_extra);
+     this->root_offdiag.distance_to_query = this->factored_query_dist(qp, this->root_offdiag.p, std::numeric_limits< double >::max(), this->dist_params, (void*)this->dfn_extra);
    }
 
    if (symmetric) {

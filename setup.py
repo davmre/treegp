@@ -18,9 +18,10 @@ print sys_includes
 print sys_libraries
 
 #extra_compile_args = ['-g', '-O0']
-extra_compile_args = ['-O3']
+extra_compile_args = ['-O3', '--stdlib=libc++']
 #extra_link_args = ['-Wl,--strip-all']
-extra_link_args = ['-lrt',]
+#extra_link_args = ['-lrt',]
+extra_link_args = []
 
 ctree_root = 'src_c'
 ctree_sources = ['cover_tree_point.cc', 'cover_tree_pp_debug.cc', 'distances.cc', 'vector_mult_py.cc', 'quadratic_form_py.cc']

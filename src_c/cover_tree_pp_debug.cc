@@ -1,6 +1,5 @@
 #include "cover_tree.hpp"
-#include <limits.h>
-#include <values.h>
+#include <limits>
 #include <stdint.h>
 #include <iostream>
 #include <stdio.h>
@@ -397,11 +396,11 @@ static void batch_nearest_neighbor(const node<pairpoint> &top_node, const node<p
   v_array<d_node> zero_set = pop(spare_zero_sets);
 
   double* upper_bound = alloc_upper();
-  setter(upper_bound,MAXDOUBLE);
+  setter(upper_bound,std::numeric_limits< double >::max());
 
   distances=0;
   distances++;
-  double top_dist = distance(query.p, top_node.p, MAXDOUBLE, dist_params, dist_extra);
+  double top_dist = distance(query.p, top_node.p, std::numeric_limits< double >::max(), dist_params, dist_extra);
   update(upper_bound, top_dist);
   d_node temp = {top_dist, &top_node};
   push(cover_sets[0], temp);

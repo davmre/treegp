@@ -1,7 +1,6 @@
 #include "cover_tree.hpp"
-#include <limits.h>
+#include <limits>
 #include <pthread.h>
-#include <values.h>
 #include <stdint.h>
 #include <iostream>
 #include <algorithm>
