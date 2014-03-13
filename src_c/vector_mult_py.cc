@@ -194,6 +194,7 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
     this->dfn = dist_3d_km;
     this->dfn_extra = NULL;
     this->ddfn_dtheta = dist3d_deriv_wrt_theta;
+    this->ddfn_dx = dist3d_deriv_wrt_xi;
   } else if (distfn_str.compare("euclidean") == 0) {
     this->dfn = dist_euclidean;
     this->dfn_extra = malloc(sizeof(int));
@@ -360,6 +361,8 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
     point p2 = {&pts2(j, 0), 0};
     double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+
+
     K(i,j) = this->dwfn_dr(r, dr_dp1, this->wp);
   }
 

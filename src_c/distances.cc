@@ -80,6 +80,49 @@ double dist_km(const double *p1, const double *p2) {
   return dist_rad * AVG_EARTH_RADIUS_KM;
 }
 
+double dist_km_deriv_wrt_xi(const double *p1, const double *p2, int i, int d) {
+  double lon1 = p1[0];
+  double lat1 = p1[1];
+  double lon2 = p2[0];
+  double lat2 = p2[1];
+  double rlon1 = RADIAN(lon1);
+  double rlat1 = RADIAN(lat1);
+  double rlon2 = RADIAN(lon2);
+  double rlat2 = RADIAN(lat2);
+
+
+    /*
+      quick hack from wolfram alpha:
+      "derivative of arcsin( sqrt( sin( (x-y)/2 )^2 + cos(x)*cos(y)* sin ((a-b)/2)^2)) with respect to x"
+
+where
+
+  x = rlat1;
+  y = rlat2;
+  a = rlon1;
+  b= rlon2;
+
+     */
+
+
+  // double t2 = cos(rlat1)*cos(rlat2)*pow(sin((rlon1-rlon2)/2.0),2) + pow(sin((rlat1-rlat2)/2.0),2);
+  double t = pow(sin(d/(2*AVG_EARTH_RADIUS_KM)), 2);
+  //printf("t1 %f t2 %f\n", t, t2);
+  double deriv_denom = 2 * sqrt( (1-t) * (t)  );
+  double deriv_num = 0;
+  if (i == 0) {
+    deriv_num = cos(rlat1)*cos(rlat2)*sin(rlon1-rlon2);
+  } else if (i ==1) {
+    deriv_num = sin(rlat1-rlat2) - 2 * sin(rlat1)*cos(rlat2)*pow(sin((rlon1-rlon2)/2.0), 2);
+  } else {
+    printf("don't know how to take derivative of great-circle distance with respect to input index %d\n", i);
+    exit(0);
+  }
+
+  return deriv_num/deriv_denom * 3.14159265/180.0 * AVG_EARTH_RADIUS_KM;
+}
+
+
 double dist_3d_km(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void * extra) {
   return sqrt(distsq_3d_km(p1.p, p2.p, BOUND_IGNORED, scales, extra));
 }
@@ -87,6 +130,7 @@ double dist_3d_km(const point p1, const point p2, double BOUND_IGNORED, const do
 double dist_3d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales, const void * extra) {
   return sqrt(distsq_3d_km(p1, p2, BOUND_IGNORED, scales, extra));
 }
+
 
 double distsq_3d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales, const void * extra) {
   double distkm = dist_km(p1, p2) / scales[0];
@@ -155,6 +199,42 @@ double dist3d_deriv_wrt_theta(const double *p1, const double *p2, int i, double 
     exit(-1);
     return 0;
   }
+}
+
+double dist3d_deriv_wrt_xi(const double * p1, const double * p2, int i, double d, double BOUND_IGNORED, const double *scales, void * extra) {
+
+  if (d == 0)
+    return 0;
+
+  if (i < 2) {
+    // deriv of sqrt((dkm/scale)^2 + (ddb-dda)^2/scale2^2)
+    // is   (dkm/scale) * (d_dkm_di/scale)   / d
+
+    double dkm = dist_km(p1, p2);
+    double d_dkm_di = dist_km_deriv_wrt_xi(p1, p2, i, dkm);
+
+    /*
+    double eps = 1e-8;
+    double pp[3];
+    pp[0] = p1[0];
+    pp[1] = p1[1];
+    pp[2] = p1[2];
+    pp[i] += eps;
+    double dkm2 = dist_km((const double *)&pp, p2);
+
+    double empirical_dd = (dkm2-dkm)/eps;
+
+    printf("i %d distkm %f distkm2 %f dd %f empirical dd %f\n", i, dkm, dkm2, d_dkm_di, empirical_dd);
+    */
+
+    return (dkm * d_dkm_di) / (scales[0] * scales[0] * d);
+  } if (i==2) {
+    return (p1[i] - p2[i]) / (scales[1] * scales[1] * d) ;
+  } else {
+    printf("don't know how to take derivative of great-circle+depth distance with respect to input index %d\n", i);
+    exit(0);
+  }
+
 }
 
 

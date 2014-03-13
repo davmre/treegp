@@ -50,6 +50,7 @@ double dist_3d_km(const double * p1, const double*  p2, double BOUND_IGNORED, co
 double distsq_3d_km(const double * p1, const double*  p2, double BOUND_IGNORED, const double *scales, const void * extra);
 double pair_dist_3d_km(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *scales, void * extra);
 double dist3d_deriv_wrt_theta(const double *p1, const double *p2, int i, double d, double BOUND_IGNORED, const double *scales, void *dims);
+double dist3d_deriv_wrt_xi(const double * p1, const double * p2, int i, double d, double BOUND_IGNORED, const double *scales, void * extra);
 
 double dist_6d_km(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *extra);
 double dist_6d_km(const double * p1, const double * p2, double BOUND_IGNORED, const double *scales, const void *extra);
