@@ -80,6 +80,17 @@ double dist_km(const double *p1, const double *p2) {
   return dist_rad * AVG_EARTH_RADIUS_KM;
 }
 
+double dist_km_deriv_wrt_xi_empirical(const double *p1, const double *p2, int i, int d) {
+  double eps = 1e-8;
+  double pp[3];
+  pp[0] = p1[0];
+  pp[1] = p1[1];
+  pp[2] = p1[2];
+  pp[i] += eps;
+  double dkm2 = dist_km((const double *)&pp, p2);
+  return (dkm2-d)/eps;
+}
+
 double dist_km_deriv_wrt_xi(const double *p1, const double *p2, int i, int d) {
   double lon1 = p1[0];
   double lat1 = p1[1];
@@ -105,10 +116,11 @@ where
      */
 
 
-  // double t2 = cos(rlat1)*cos(rlat2)*pow(sin((rlon1-rlon2)/2.0),2) + pow(sin((rlat1-rlat2)/2.0),2);
-  double t = pow(sin(d/(2*AVG_EARTH_RADIUS_KM)), 2);
+  double t = cos(rlat1)*cos(rlat2)*pow(sin((rlon1-rlon2)/2.0),2) + pow(sin((rlat1-rlat2)/2.0),2);
+  //double t2 = pow(sin(d/(2*AVG_EARTH_RADIUS_KM)), 2);
   //printf("t1 %f t2 %f\n", t, t2);
   double deriv_denom = 2 * sqrt( (1-t) * (t)  );
+
   double deriv_num = 0;
   if (i == 0) {
     deriv_num = cos(rlat1)*cos(rlat2)*sin(rlon1-rlon2);
@@ -117,6 +129,12 @@ where
   } else {
     printf("don't know how to take derivative of great-circle distance with respect to input index %d\n", i);
     exit(0);
+  }
+
+  if (deriv_denom == 0) {
+    double t2 = pow(sin(d/(2*AVG_EARTH_RADIUS_KM)), 2);
+    printf("WARNING: zero denom deriv in t1 %f t2 %f d %f d/stuff %f dlon %f dlat %f num %f\n", t*1e8, t2*1e8, d*1e8, d/(2*AVG_EARTH_RADIUS_KM) * 1e8, rlon1-rlon2, rlat1-rlat2, deriv_num);
+    return dist_km_deriv_wrt_xi_empirical(p1, p2, i, d);
   }
 
   return deriv_num/deriv_denom * 3.14159265/180.0 * AVG_EARTH_RADIUS_KM;
@@ -227,7 +245,14 @@ double dist3d_deriv_wrt_xi(const double * p1, const double * p2, int i, double d
     printf("i %d distkm %f distkm2 %f dd %f empirical dd %f\n", i, dkm, dkm2, d_dkm_di, empirical_dd);
     */
 
-    return (dkm * d_dkm_di) / (scales[0] * scales[0] * d);
+    double dxi = (dkm * d_dkm_di) / (scales[0] * scales[0] * d);
+
+    if (dxi < -99999) {
+      printf("WARNING: invalid lld derivative!\n i %d dkm %f d_dkm_di %f scale %f d %f dxi %f p1 (%f, %f, %f) p2 (%f, %f, %f)\n", i, dkm, d_dkm_di, scales[0], d, dxi, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+      return 0;
+    }
+
+    return dxi;
   } if (i==2) {
     return (p1[i] - p2[i]) / (scales[1] * scales[1] * d) ;
   } else {

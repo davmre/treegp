@@ -362,6 +362,24 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
     double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
 
+    /*
+    double eps = 1e-8;
+    double pp[3];
+    pp[0] = p1.p[0];
+    pp[1] = p1.p[1];
+    pp[2] = p1.p[2];
+    pp[k] += eps;
+    point ppp = {(const double*)&pp, 0};
+
+    double r2 = this->dfn(ppp, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+
+    double empirical_dd = (r2-r)/eps;
+
+    printf("i %d r %f r2 %f dd %f empirical dd %f\n", k, r, r2, dr_dp1, empirical_dd);
+
+    if (dr_dp1 < -9999999) {
+      exit(0);
+    }    */
 
     K(i,j) = this->dwfn_dr(r, dr_dp1, this->wp);
   }
