@@ -103,15 +103,15 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
         dfn_fic_priors = [l2,] * len(dfn_params_fic)
 
     cov_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
-                      wfn_params=[1.0,], dfn_params=dfn_params_cs,
+                      wfn_params=[3.0,], dfn_params=dfn_params_cs,
                       wfn_priors=[ln],
                       dfn_priors=dfn_cs_priors)
 
-    cov_fic = GPCov(wfn_params=[1.0,], dfn_params=dfn_params_fic,
+    cov_fic = GPCov(wfn_params=[.5,], dfn_params=dfn_params_fic,
                      wfn_str="se", dfn_str=dfn_str, Xu=initial_xu,
                      wfn_priors=[ln],
                      dfn_priors=dfn_fic_priors)
-    noise_var = 0.5
+    noise_var = 0.001
 
     covs = []
     for i in range(random_restarts):
@@ -192,7 +192,7 @@ def hardcode_snow():
 initial_cs_params = {
     "snow": [1.5, .1, .1, 1.5],
     "precip_all": [.2, .2, 2],
-    "tco": [20.0, 1.0],
+    "tco": [25.0, 1.0],
     "housing_age": [2.,2.],
     "housing_val": [2.,2.],
     "housing_inc": [2.,2.],
@@ -204,7 +204,7 @@ initial_cs_params = {
 initial_se_params = {
     "snow": [20., 5., 5., 10.],
     "precip_all": [15.,15.,40.],
-    "tco": [200., 20.],
+    "tco": [187., 14.],
     "housing_age": [8., 8.],
     "housing_val": [8., 8.],
     "housing_inc": [8., 8.],
