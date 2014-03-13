@@ -68,6 +68,11 @@ def trained_gp(dataset_name, model_name, n=None, tag=None, **kwargs):
     X_train, y_train = training_data(dataset_name, n=n)
     cov_main, cov_fic, noise_var = load_hparams(dataset_name, model_name, tag=tag)
 
+
+    if model_name=="se":
+        kwargs['sparse_invert'] = False
+        kwargs['build_tree'] = False
+
     "print training GP for", dataset_name, model_name
     sgp = GP(X=X_train, y=y_train,
              noise_var=noise_var,

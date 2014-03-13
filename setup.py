@@ -18,7 +18,11 @@ print sys_includes
 print sys_libraries
 
 #extra_compile_args = ['-g', '-O0']
-extra_compile_args = ['-O3', '--stdlib=libc++']
+extra_compile_args = ['-O3']
+
+# extra_compile_args += [ '--stdlib=libc++'] # uncomment this for OSX/clang
+
+
 #extra_link_args = ['-Wl,--strip-all']
 #extra_link_args = ['-lrt',]
 extra_link_args = []

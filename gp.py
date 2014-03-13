@@ -1300,6 +1300,8 @@ def optimize_gp_hyperparams(optimize_Xu=True,
     n_fic_wfn  = len(cov_fic.wfn_params) if cov_fic is not None else 0
     n_fic_dfn = len(cov_fic.dfn_params) if cov_fic is not None else 0
 
+    n_non_xu = 1 + n_mean_wfn + n_mean_dfn + n_fic_wfn + n_fic_dfn
+
     bounds = [(1e-8, None),]
     if cov_main is not None:
         bounds += cov_main.bounds()
@@ -1360,7 +1362,7 @@ def optimize_gp_hyperparams(optimize_Xu=True,
 
     def nllgrad(v):
 
-        if np.any(v < 1e-10) or not np.all(np.isfinite(v)):
+        if np.any(v[:n_non_xu] < 1e-10) or not np.all(np.isfinite(v)):
             return np.float('inf'), np.zeros(v.shape)
 
         noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)

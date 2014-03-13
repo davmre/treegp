@@ -4,7 +4,7 @@ import pandas as pd
 import sys
 import copy
 import argh
-
+from collections import defaultdict
 import cPickle as pickle
 
 from sparsegp.distributions import LogUniform, LogNormal
@@ -88,23 +88,30 @@ def subsample_data(X, y, n):
     return X[rows,:], y[rows]
 
 
-def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean", n_train_hyper=1500, n_fic=20, optimize_xu=False, random_restarts=1):
+def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean", n_train_hyper=1500, n_fic=20, optimize_xu=False, random_restarts=1, dfn_fic_priors=None, dfn_cs_priors=None):
     X_full, y_full = training_data(dataset_name)
-    X, y = subsample_data(X_full, y_full, n_train_hyper)
-    initial_xu, _ = subsample_data(X, y, n_fic)
+
+    initial_xu, _ = subsample_data(X_full, y_full, n_fic)
 
     ln = LogNormal(0.0, 2.0)
-    l1 = LogNormal(0.0, 2.0)
-    l2 = LogNormal(2.0, 3.0)
+
+    if not dfn_cs_priors:
+        l1 = LogNormal(0.0, 2.0)
+        dfn_cs_priors = [l1,] * len(dfn_params_cs)
+
+    if not dfn_fic_priors:
+        l2 = LogNormal(2.0, 3.0)
+        dfn_fic_priors = [l2,] * len(dfn_params_fic)
+
     cov_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
                       wfn_params=[1.0,], dfn_params=dfn_params_cs,
                       wfn_priors=[ln],
-                      dfn_priors=[l1,] * len(dfn_params_cs))
+                      dfn_priors=dfn_cs_priors)
 
     cov_fic = GPCov(wfn_params=[1.0,], dfn_params=dfn_params_fic,
                      wfn_str="se", dfn_str=dfn_str, Xu=initial_xu,
                      wfn_priors=[ln],
-                     dfn_priors=[l2,] * len(dfn_params_fic))
+                     dfn_priors=dfn_fic_priors)
     noise_var = 0.5
 
     covs = []
@@ -121,18 +128,21 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
     optim_tag = "_xu" if optimize_xu else ""
     save_hparams(dataset_name, "csfic%d" % n_fic, cov_main_best, cov_fic_best, noise_var_best, tag="%d%s" % (n_train_hyper,optim_tag) )
 
-def train_se(dataset_name, dfn_params_se, dfn_str="euclidean", n_train_hyper=1500, random_restarts=3):
+def train_se(dataset_name, dfn_params_se, dfn_str="euclidean", n_train_hyper=1500, random_restarts=3, dfn_priors=[]):
     X_full, y_full = training_data(dataset_name)
 
-    X, y = subsample_data(X_full, y_full, n_train_hyper)
 
     ln = LogNormal(0.0, 2.0)
-    l1 = LogNormal(0.0, 2.0)
-    l2 = LogNormal(2.0, 3.0)
-    cov_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
+
+    if len(dfn_priors) == 0:
+        l1 = LogNormal(0.0, 2.0)
+        [l1,] * len(dfn_params_se)
+
+
+    cov_main = GPCov(wfn_str="se", dfn_str=dfn_str,
                       wfn_params=[1.0,], dfn_params=dfn_params_se,
                       wfn_priors=[ln],
-                      dfn_priors=[l1,] * len(dfn_params_se))
+                      dfn_priors=dfn_priors)
 
     noise_var = 0.5
 
@@ -187,17 +197,9 @@ initial_cs_params = {
     "housing_age": [2.,2.],
     "housing_val": [2.,2.],
     "housing_inc": [2.,2.],
+    "seismic_fitz": [10.0,300.0],
+    "seismic_as12": [10.0,300.0],
     "sarcos": [10,] * 21,
-}
-
-initial_fic_params = {
-    "snow": [20., 5., 5., 10.],
-    "precip_all": [15.,15.,40.],
-    "tco": [200., 20.],
-    "housing_age": [8., 8.],
-    "housing_val": [8., 8.],
-    "housing_inc": [8., 8.],
-    "sarcos": [100,] * 21,
 }
 
 initial_se_params = {
@@ -208,14 +210,30 @@ initial_se_params = {
     "housing_val": [8., 8.],
     "housing_inc": [8., 8.],
     "sarcos": [100,] * 21,
+    "seismic_fitz": [300.0,300.0],
+    "seismic_as12": [300.0,300.0],
+
 }
 
+dfn_cs_priors = defaultdict(list)
+dfn_cs_priors['seismic_fitz'] = [LogNormal(np.log(20), 1.0), LogNormal(np.log(300), 1.0)]
+dfn_cs_priors['seismic_as12'] = [LogNormal(np.log(20), 1.0), LogNormal(np.log(300), 1.0)]
 
-def train_hparams(dataset, fic=None, optimize_xu=False, dfn_str="euclidean", n_hyper=2500, random_restarts=1):
+dfn_se_priors = defaultdict(list)
+dfn_se_priors['seismic_fitz'] = [LogNormal(np.log(500.0), 1.0), LogNormal(np.log(500.0), 1.0)]
+dfn_se_priors['seismic_as12'] = [LogNormal(np.log(500.0), 1.0), LogNormal(np.log(500.0), 1.0)]
+
+
+def train_hparams(dataset, fic=None, optimize_xu=False, n_hyper=2500, random_restarts=1):
+
+    dfn_str="euclidean"
+    if dataset.startswith("seismic"):
+        dfn_str="lld"
+
     if fic is None:
-        train_se(dataset, initial_se_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts)
+        train_se(dataset, initial_se_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts, dfn_priors=dfn_se_priors[dataset])
     else:
-        train_csfic(dataset, initial_fic_params[dataset], initial_cs_params[dataset], n_train_hyper=n_hyper, n_fic=int(fic), random_restarts=random_restarts)
+        train_csfic(dataset, initial_se_params[dataset], initial_cs_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, n_fic=int(fic), random_restarts=random_restarts, dfn_fic_priors=dfn_se_priors[dataset], dfn_cs_priors=dfn_cs_priors[dataset], optimize_xu=optimize_xu)
 
 if __name__ == '__main__':
 
