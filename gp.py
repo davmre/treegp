@@ -1359,6 +1359,10 @@ def optimize_gp_hyperparams(optimize_Xu=True,
         return grad
 
     def nllgrad(v):
+
+        if np.any(v < 1e-10) or not np.all(np.isfinite(v)):
+            return np.float('inf'), np.zeros(v.shape)
+
         noise_var, new_cov_main, new_cov_fic = covs_from_vector(v)
 
         try:
@@ -1366,6 +1370,7 @@ def optimize_gp_hyperparams(optimize_Xu=True,
                     cov_main=new_cov_main, cov_fic=new_cov_fic, **kwargs)
             ll = gp.ll
             grad = gp.ll_grad
+            del gp
 
             ll += noise_prior.log_p(noise_var) + \
                   ( new_cov_main.prior_logp() if new_cov_main is not None else 0 ) + \

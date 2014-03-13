@@ -1,6 +1,9 @@
 import numpy as np
 import scipy.optimize
 import pandas as pd
+import sys
+import copy
+import argh
 
 import cPickle as pickle
 
@@ -8,6 +11,28 @@ from sparsegp.distributions import LogUniform, LogNormal
 from sparsegp.gp import GP, GPCov, optimize_gp_hyperparams
 
 from datasets import *
+
+def bfgs_bump(nllgrad, x0, bounds, options, max_rounds=5, **kwargs):
+
+    f1 = 1
+    f2 = 0
+    rounds = 0
+    while f2 <  f1 - .0001 and rounds < max_rounds:
+        rounds += 1
+        result = scipy.optimize.minimize(fun=nllgrad, x0=x0,
+                                         method="L-BFGS-B", jac=True,
+                                         options=options, bounds=bounds, **kwargs)
+
+        grad_options = dict()
+        grad_options['maxiter'] = 3
+        result = scipy.optimize.minimize(fun=nllgrad, x0=result.x,
+                                         method="CG", jac=True,
+                                         options=grad_options)
+
+        f2 = result.fun
+        x0 = result.x
+
+    return result, rounds
 
 def train_hyperparams(X,
                       y,
@@ -17,43 +42,111 @@ def train_hyperparams(X,
                       noise_prior,
                       optimize_xu=False):
 
-    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu)
-
-    result = scipy.optimize.minimize(fun=nllgrad, x0=x0,
-                                     method="L-BFGS-B", jac=True,
-                                     options={'disp': True}, bounds=bounds)
-
-    return covs_from_vector(result.x)
+    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu, sparse_invert=False, build_tree=False)
 
 
-def random_rows(A, n):
-    p = np.random.permutation(A.shape[0])
+    result, rounds = bfgs_bump(nllgrad=nllgrad, x0=x0,
+                       options={'disp': True}, bounds=bounds)
+
+    print "optimized in", rounds, "rounds"
+    noise_var, cov_main, cov_fic = covs_from_vector(result.x)
+    return noise_var, cov_main, cov_fic
+
+def choose_best_hparams(covs, X, y, noise_prior):
+
+    noise_var, cov_main, cov_fic = covs[0]
+
+    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, sparse_invert=False, build_tree=False)
+
+    best_ll = np.float('-inf')
+    for (noise_var, cov_main, cov_fic) in covs:
+
+        gp = GP(compute_ll=True, noise_var=noise_var,
+                cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, sparse_invert=False, build_tree=False)
+        ll = gp.ll
+        del gp
+
+        ll += noise_prior.log_p(noise_var) + \
+              ( cov_main.prior_logp() if cov_main is not None else 0 ) + \
+              ( cov_fic.prior_logp() if cov_fic is not None else 0 )
+
+        print "params", noise_var, cov_main, cov_fic, "got likelihood", ll
+
+        if ll > best_ll:
+            best_ll = ll
+            best_noise_var = noise_var
+            best_cov_main = cov_main
+            best_cov_fic = cov_fic
+
+    return best_noise_var, best_cov_main, best_cov_fic
+
+
+
+def subsample_data(X, y, n):
+    p = np.random.permutation(X.shape[0])
     rows = p[:n]
-    return np.copy(A[rows,:]), rows
+    return X[rows,:], y[rows]
 
 
-def train_generic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean", n_train_hyper=1500, n_fic=20, optimize_xu=False):
-    X, y = training_data(dataset_name)
+def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean", n_train_hyper=1500, n_fic=20, optimize_xu=False, random_restarts=1):
+    X_full, y_full = training_data(dataset_name)
+    X, y = subsample_data(X_full, y_full, n_train_hyper)
+    initial_xu, _ = subsample_data(X, y, n_fic)
 
-    X, rows = random_rows(X, n_train_hyper)
-    y = y[rows]
-
-    initial_xu, xu_rows = random_rows(X, n_fic)
     ln = LogNormal(0.0, 2.0)
     l1 = LogNormal(0.0, 2.0)
-    l2 = LogNormal(2.0, 2.0)
-    cov0_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
+    l2 = LogNormal(2.0, 3.0)
+    cov_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
                       wfn_params=[1.0,], dfn_params=dfn_params_cs,
                       wfn_priors=[ln],
                       dfn_priors=[l1,] * len(dfn_params_cs))
 
-    cov0_fic = GPCov(wfn_params=[1.0,], dfn_params=dfn_params_fic,
+    cov_fic = GPCov(wfn_params=[1.0,], dfn_params=dfn_params_fic,
                      wfn_str="se", dfn_str=dfn_str, Xu=initial_xu,
                      wfn_priors=[ln],
                      dfn_priors=[l2,] * len(dfn_params_fic))
-    noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov0_main, cov0_fic, 0.5, ln, optimize_xu=optimize_xu)
+    noise_var = 0.5
+
+    covs = []
+    for i in range(random_restarts):
+        X, y = subsample_data(X_full, y_full, n_train_hyper)
+
+        noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov_main, cov_fic, noise_var, ln, optimize_xu=optimize_xu)
+        covs.append((noise_var, cov_main, cov_fic))
+
+
+    X_eval, y_eval = subsample_data(X_full, y_full, n_train_hyper)
+    noise_var_best, cov_main_best, cov_fic_best = choose_best_hparams(covs, X_eval, y_eval, ln)
+
     optim_tag = "_xu" if optimize_xu else ""
-    save_hparams(dataset_name, "csfic%d" % n_fic, cov_main, cov_fic, noise_var, tag="%d%s" % (n_train_hyper,optim_tag) )
+    save_hparams(dataset_name, "csfic%d" % n_fic, cov_main_best, cov_fic_best, noise_var_best, tag="%d%s" % (n_train_hyper,optim_tag) )
+
+def train_se(dataset_name, dfn_params_se, dfn_str="euclidean", n_train_hyper=1500, random_restarts=3):
+    X_full, y_full = training_data(dataset_name)
+
+    X, y = subsample_data(X_full, y_full, n_train_hyper)
+
+    ln = LogNormal(0.0, 2.0)
+    l1 = LogNormal(0.0, 2.0)
+    l2 = LogNormal(2.0, 3.0)
+    cov_main = GPCov(wfn_str="compact2", dfn_str=dfn_str,
+                      wfn_params=[1.0,], dfn_params=dfn_params_se,
+                      wfn_priors=[ln],
+                      dfn_priors=[l1,] * len(dfn_params_se))
+
+    noise_var = 0.5
+
+    covs = []
+    for i in range(random_restarts):
+        X, y = subsample_data(X_full, y_full, n_train_hyper)
+
+        noise_var, cov_main, _,  = train_hyperparams(X, y, cov_main, None, noise_var, ln)
+        covs.append((noise_var, cov_main, None))
+
+    X_eval, y_eval = subsample_data(X_full, y_full, n_train_hyper)
+    noise_var_best, cov_main_best, _ = choose_best_hparams(covs, X_eval, y_eval, ln)
+    save_hparams(dataset_name, "se", cov_main_best, None, noise_var_best, tag="%d" % (n_train_hyper,) )
+
 
 def hardcode_snow():
 
@@ -85,21 +178,45 @@ def hardcode_snow():
                      wfn_str="se", dfn_str="euclidean", Xu=initial_xu)
     save_hparams("snowm", "csfic20" , cov_main, cov_fic, .1377, tag="matlab" )
 
+
+
+initial_cs_params = {
+    "snow": [1.5, .1, .1, 1.5],
+    "precip_all": [.2, .2, 2],
+    "tco": [20.0, 1.0],
+    "housing_age": [2.,2.],
+    "housing_val": [2.,2.],
+    "housing_inc": [2.,2.],
+    "sarcos": [10,] * 21,
+}
+
+initial_fic_params = {
+    "snow": [20., 5., 5., 10.],
+    "precip_all": [15.,15.,40.],
+    "tco": [200., 20.],
+    "housing_age": [8., 8.],
+    "housing_val": [8., 8.],
+    "housing_inc": [8., 8.],
+    "sarcos": [100,] * 21,
+}
+
+initial_se_params = {
+    "snow": [20., 5., 5., 10.],
+    "precip_all": [15.,15.,40.],
+    "tco": [200., 20.],
+    "housing_age": [8., 8.],
+    "housing_val": [8., 8.],
+    "housing_inc": [8., 8.],
+    "sarcos": [100,] * 21,
+}
+
+
+def train_hparams(dataset, fic=None, optimize_xu=False, dfn_str="euclidean", n_hyper=2500, random_restarts=1):
+    if fic is None:
+        train_se(dataset, initial_se_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts)
+    else:
+        train_csfic(dataset, initial_fic_params[dataset], initial_cs_params[dataset], n_train_hyper=n_hyper, n_fic=int(fic), random_restarts=random_restarts)
+
 if __name__ == '__main__':
-    train_generic("snow", [20, 5, 5, 10], [1.5, .1, .1, 1.5], n_train_hyper=5000)
 
-    train_generic("precip_all", [15, 15, 40], [.2, .2, 2], n_train_hyper=5000, n_fic=20)
-    train_generic("precip_all", [15, 15, 40], [.2, .2, 2], n_train_hyper=5000, n_fic=90)
-
-    train_generic("tco", [40, 40], [2.0, 2.0], n_train_hyper=5000, n_fic=20)
-    train_generic("tco", [40, 40], [2.0, 2.0], n_train_hyper=5000, n_fic=90)
-
-    train_generic("housing_age", [8, 8], [2,2], n_train_hyper=5000, n_fic=20)
-    train_generic("housing_age", [8, 8], [2,2], n_train_hyper=5000, n_fic=90)
-    train_generic("housing_val", [8, 8], [2,2], n_train_hyper=5000, n_fic=20)
-    train_generic("housing_val", [8, 8], [2,2], n_train_hyper=5000, n_fic=90)
-    train_generic("housing_inc", [8, 8], [2,2], n_train_hyper=5000, n_fic=20)
-    train_generic("housing_inc", [8, 8], [2,2], n_train_hyper=5000, n_fic=90)
-
-
-#    argh.dispatch_command(train_hyperparams)
+    argh.dispatch_command(train_hparams)

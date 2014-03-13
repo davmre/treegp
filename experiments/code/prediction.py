@@ -17,6 +17,11 @@ def test_predict(dataset_name, model_name, sgp=None, n=None, tag=None):
     print "loaded GP, evaluating predictive performance on %d test points..." % len(y_test)
 
 
+    if len(y_test) > 5000:
+        print "WARNING: using only first 5000 of %d test points" % len(y_test)
+        X_test = X_test[:5000, :]
+        y_test = y_test[:5000]
+
     pred_y = sgp.predict_naive(X_test)
     predtree_y = sgp.predict(X_test)
     r = pred_y - y_test
