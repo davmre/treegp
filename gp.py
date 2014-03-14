@@ -132,7 +132,7 @@ class GPCov(object):
         v = np.concatenate([prior_grad(self.wfn_params, self.wfn_priors) ,
                             prior_grad(self.dfn_params, self.dfn_priors)])
         if include_xu and self.Xu is not None:
-            v = np.concatenate([v, np.zeros((self.Xu.size,))])
+            v = np.concatenate([v, np.zeros((self.cov_fic.Xu.size,))])
         return v
 
     def __repr__(self):
@@ -426,10 +426,10 @@ class GP(object):
                 if type(self.K) == np.ndarray or type(self.K) == np.matrix:
                     self.K = self.sparsify(self.K)
                 alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
+                self.Kinv = self.sparsify(Kinv)
             else:
                 alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
-            self.Kinv = self.sparsify(Kinv)
-
+                self.Kinv=np.matrix(Kinv)
             #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
 
             # if we have any additive low-rank covariances, compute the appropriate terms
@@ -986,6 +986,8 @@ class GP(object):
             ldiag = np.diag(L)
 
 
+        z = np.reshape(z, (-1, 1))
+
         # everything is much simpler in the pure nonparametric case
         if self.n_features == 0:
             ld2_K = np.log(ldiag).sum()
@@ -1076,49 +1078,6 @@ class GP(object):
         K1 = pt.kernel_matrix(self.X, self.X, True)
 
         return (K1 - K) / eps
-    """
-
-    def get_dKdi_dense(self, i, n_main_params, n_fic_non_inducing):
-        if (i == 0):
-            dKdi = np.eye(self.n)
-        elif (i == 1):
-            if (len(self.cov_main.wfn_params) != 1):
-                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_main.wfn_params)
-            dKdi = self.kernel(self.X, self.X, identical=False) / self.cov_main.wfn_params[0]
-        elif i <= n_main_params:
-            dKdi = self.predict_tree.kernel_deriv_wrt_i(self.X, self.X, i-2)
-        elif i == n_main_params+1:
-            if (len(self.cov_fic.wfn_params) != 1):
-                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_fic.wfn_params)
-            dKdi = self.get_dKdi_dense_fic_wfnvar()
-            #dKdi_empirical = self.get_dKdi_empirical_fic_wfnvar()
-        elif i <= n_main_params + n_fic_non_inducing:
-            dKdi = self.get_dKdi_dense_fic_dfn(i-n_main_params-2)
-            #dKdi_empirical = self.get_dKdi_empirical_fic_dfn(i-n_main_params-2)
-            #import pdb; pdb.set_trace()
-        else:
-            p = int(np.floor((i-n_main_params-n_fic_non_inducing-1) / self.cov_fic.Xu.shape[1]))
-            ii = (i-n_main_params-n_fic_non_inducing-1) % self.cov_fic.Xu.shape[1]
-            dKdi = self.get_dKdi_dense_fic_inducing(p,ii)
-            #dKdi_empirical = self.get_dKdi_empirical_fic_xu(p,ii)
-            #import pdb; pdb.set_trace()
-        return dKdi
-
-    def get_dKdi_dense_fic_wfnvar(self):
-        B = scipy.linalg.solve(self.Luu, self.K_fic_un)
-        Qnn = np.dot(B.T, B)
-        Qnn /= self.cov_fic.wfn_params[0]
-        Qnn += np.diag(1.0 - np.diag(Qnn))
-        return Qnn
-
-    def build_qnn(self, cov):
-        pt = VectorTree(self.X, 1, *cov.tree_params())
-        Kuu = pt.kernel_matrix(cov.Xu, cov.Xu, False)
-        Kun = pt.kernel_matrix(cov.Xu, self.X, False)
-        Kuu_inv = np.linalg.inv(Kuu)
-        Qnn = np.dot(Kun.T, np.dot(Kuu_inv, Kun))
-        Qnn += np.diag(cov.wfn_params[0] - np.diag(Qnn))
-        return Qnn
 
     def get_dKdi_empirical_fic_wfnvar(self, eps=1e-8):
         self.cov_fic.wfn_params[0] -= eps
@@ -1144,6 +1103,53 @@ class GP(object):
         self.cov_fic.Xu[p,i] -= eps
         return (qnn2-qnn1) / (2*eps)
 
+
+    """
+
+    def get_dKdi_dense(self, i, n_main_params, n_fic_non_inducing):
+        if (i == 0):
+            dKdi = np.eye(self.n)
+        elif (i == 1):
+            if (len(self.cov_main.wfn_params) != 1):
+                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_main.wfn_params)
+            dKdi = self.kernel(self.X, self.X, identical=False) / self.cov_main.wfn_params[0]
+        elif i <= n_main_params:
+            dKdi = self.predict_tree.kernel_deriv_wrt_i(self.X, self.X, i-2, 1, self.distance_cache_XX)
+        elif i == n_main_params+1:
+            if (len(self.cov_fic.wfn_params) != 1):
+                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_fic.wfn_params)
+            dKdi = self.get_dKdi_dense_fic_wfnvar()
+            #dKdi_empirical = self.get_dKdi_empirical_fic_wfnvar()
+        elif i <= n_main_params + n_fic_non_inducing:
+            dKdi = self.get_dKdi_dense_fic_dfn(i-n_main_params-2)
+            #dKdi_empirical = self.get_dKdi_empirical_fic_dfn(i-n_main_params-2)
+            #import pdb; pdb.set_trace()
+        else:
+            p = int(np.floor((i-n_main_params-n_fic_non_inducing-1) / self.cov_fic.Xu.shape[1]))
+            ii = (i-n_main_params-n_fic_non_inducing-1) % self.cov_fic.Xu.shape[1]
+            dKdi = self.get_dKdi_dense_fic_inducing(p,ii)
+            #dKdi_empirical = self.get_dKdi_empirical_fic_xu(p,ii)
+            #import pdb; pdb.set_trace()
+
+
+        return dKdi
+
+    def get_dKdi_dense_fic_wfnvar(self):
+        B = scipy.linalg.solve(self.Luu, self.K_fic_un)
+        Qnn = np.dot(B.T, B)
+        Qnn /= self.cov_fic.wfn_params[0]
+        Qnn += np.diag(1.0 - np.diag(Qnn))
+        return Qnn
+
+    def build_qnn(self, cov):
+        pt = VectorTree(self.X, 1, *cov.tree_params())
+        Kuu = pt.kernel_matrix(cov.Xu, cov.Xu, False)
+        Kun = pt.kernel_matrix(cov.Xu, self.X, False)
+        Kuu_inv = np.linalg.inv(Kuu)
+        Qnn = np.dot(Kun.T, np.dot(Kuu_inv, Kun))
+        Qnn += np.diag(cov.wfn_params[0] - np.diag(Qnn))
+        return Qnn
+
     def get_dKdi_dense_fic(self, dKuu_di, dKnu_di):
         tmp = np.dot(dKnu_di, self.D)
         dKdi = tmp + tmp.T - np.dot(self.D.T, np.dot(dKuu_di, self.D))
@@ -1151,13 +1157,14 @@ class GP(object):
         return dKdi
 
     def get_dKdi_dense_fic_dfn(self, i):
-        dKuu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.cov_fic.Xu, self.cov_fic.Xu, i)
-        dKnu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.X, self.cov_fic.Xu, i)
+        dKuu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.cov_fic.Xu, self.cov_fic.Xu, i, 1, self.distance_cache_XuXu)
+        dKnu_di = self.predict_tree_fic.kernel_deriv_wrt_i(self.X, self.cov_fic.Xu, i, 0, self.distance_cache_XXu)
 
         return self.get_dKdi_dense_fic(dKuu_di, dKnu_di)
 
     def get_dKdi_dense_fic_inducing(self, p, i):
 
+        """
         def deriv_uu_wrt_Xu_empirical(p,i, eps=1e-8):
             Xu = np.copy(self.cov_fic.Xu)
             Xu[p,i] -= eps
@@ -1173,7 +1180,7 @@ class GP(object):
             Xu[p,i] += 2*eps
             K2 = self.predict_tree_fic.kernel_matrix(Xu, self.X, False)
             return (K2-K1)/(2*eps)
-
+        """
 
         def deriv_uu_wrt_Xu(p, i):
             nu = self.cov_fic.Xu.shape[0]
@@ -1195,18 +1202,26 @@ class GP(object):
 
         return self.get_dKdi_dense_fic(dKuu_di, dKnu_di)
 
-    def get_dKdi_sparse(self, i, M):
+    """
+    def get_dKdi_sparse(self, i, M, n_main_params, n_fic_non_inducing):
+
         if (i == 0):
             dKdi = scipy.sparse.eye(self.n)
         elif (i == 1):
             if (len(self.cov_main.wfn_params) != 1):
                 raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_main.wfn_params)
             dKdi = self.sparse_kernel(self.X, identical=False) / self.cov_main.wfn_params[0]
-        else:
+        elif i <= n_main_params:
             nzr, nzc = M.nonzero()
             entries = self.predict_tree.sparse_kernel_deriv_wrt_i(self.X, self.X, nzr, nzc, i-2)
             dKdi = scipy.sparse.coo_matrix((entries, (nzr, nzc)), shape=(self.n, self.n), dtype=float)
+        elif i == n_main_params+1:
+            if (len(self.cov_fic.wfn_params) != 1):
+                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_fic.wfn_params)
+            entries = get_dKdi_sparse_fic_wfnvar()
+            dKdi = scipy.sparse.coo_matrix((entries, (nzr, nzc)), shape=(self.n, self.n), dtype=float)
         return dKdi
+    """
 
     def _log_likelihood_gradient(self, z, H, Kinv, include_xu=True):
         """
@@ -1218,12 +1233,17 @@ class GP(object):
         n_main_params = len(self.cov_main.flatten())
         n_fic_non_inducing = 0
         nparams = 1 + n_main_params
+        self.distance_cache_XX = self.predict_tree.kernel_matrix(self.X, self.X, True)
         if self.cov_fic is not None:
             nparams += len(self.cov_fic.flatten(include_xu=include_xu))
             n_fic_non_inducing = len(self.cov_fic.flatten(include_xu=False))
             self.D = scipy.linalg.solve(self.K_fic_uu, self.K_fic_un)
+            self.distance_cache_XuXu = self.predict_tree_fic.kernel_matrix(self.cov_fic.Xu, self.cov_fic.Xu, True)
+            self.distance_cache_XXu = self.predict_tree_fic.kernel_matrix(self.X, self.cov_fic.Xu, True)
+
 
         grad = np.zeros((nparams,))
+
 
         if self.n_features > 0:
             tmp = np.dot(self.invc, self.HKinv)

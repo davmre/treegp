@@ -388,7 +388,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
 }
 
 
-pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i) {
+pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i, int symmetric, const pyublas::numpy_matrix<double> distances) {
 
   if (this->ddfn_dtheta == NULL) {
     printf("ERROR: gradient not implemented for this distance function.\n");
@@ -400,23 +400,36 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
   }
 
 
-  pyublas::numpy_matrix<double> K(pts1.size1(), pts2.size1());
-
-
+ pyublas::numpy_matrix<double> K(pts1.size1(), pts2.size1());
+  /*
   for(unsigned i = 0; i < pts1.size1 (); ++ i) {
     for (unsigned j = 0; j < pts2.size1 (); ++ j) {
       K(i,j) = 0;
     }
-  }
+    }*/
 
 
   for (unsigned i = 0; i < pts1.size1 (); ++ i) {
     point p1 = {&pts1(i, 0), 0};
-    for (unsigned j = 0; j < pts2.size1 (); ++ j) {
+
+    int min_j = 0;
+    if (symmetric) {min_j = i;}
+
+    for (unsigned j = min_j; j < pts2.size1 (); ++ j) {
       point p2 = {&pts2(j, 0), 0};
-      double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+      // double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+      double r = distances(i,j);
       double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+      //K(i,j) = kernels(i,j) * -2 * distances(i,j) * dr_dtheta;
       K(i,j) = this->dwfn_dr(r, dr_dtheta, this->wp);
+    }
+  }
+
+  if (symmetric) {
+    for (unsigned i = 0; i < pts1.size1 (); ++ i) {
+      for (unsigned j = 0; j < i; ++ j) {
+	K(i,j) = K(j,i);
+      }
     }
   }
 

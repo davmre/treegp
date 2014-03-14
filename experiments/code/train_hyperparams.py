@@ -43,7 +43,6 @@ def train_hyperparams(X,
 
     nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu, sparse_invert=False, build_tree=False)
 
-
     result, rounds = bfgs_bump(nllgrad=nllgrad, x0=x0,
                        options={'disp': True}, bounds=bounds)
 

@@ -17,8 +17,8 @@ double dist_euclidean_deriv_wrt_theta(const double *p1, const double *p2, int i,
   if (d == 0)
     return 0;
 
-  double diff = (p1[i] - p2[i]);
-  return - diff*diff / ( pow(scales[i],3) * d);
+  double diff = (p1[i] - p2[i])/scales[i];
+  return - diff*diff / ( scales[i] * d);
 }
 
 double dist_euclidean(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *dims) {
