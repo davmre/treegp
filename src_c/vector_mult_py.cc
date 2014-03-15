@@ -292,7 +292,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_matrix(const pyublas::numpy_mat
 }
 
 
-pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const pyublas::numpy_matrix<double> &pts, double max_distance) {
+pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const pyublas::numpy_matrix<double> &pts, double max_distance, bool distance_only) {
 
   pyublas::numpy_matrix<double> K(pts.size1()*2, 3);
 
@@ -328,7 +328,7 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
       }
       K(nzero,0) = i;
       K(nzero,1) = j;
-      K(nzero,2) = this->w(d, this->wp);
+      K(nzero,2) = distance_only ? d : this->w(d, this->wp);
       nzero++;
     }
     //printf("inserted %d neighbors for point %d\n", res[0].index-1, i);
@@ -388,7 +388,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
 }
 
 
-pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i, int symmetric, const pyublas::numpy_matrix<double> distances) {
+pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i, bool symmetric, const pyublas::numpy_matrix<double> distances) {
 
   if (this->ddfn_dtheta == NULL) {
     printf("ERROR: gradient not implemented for this distance function.\n");
@@ -436,7 +436,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
   return K;
 }
 
-pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i) {
+pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries) {
 
   pyublas::numpy_vector<double> entries(nzr.size());
   if (this->ddfn_dtheta == NULL) {
@@ -452,7 +452,8 @@ pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyubla
     point p1 = {&pts1(nzr[i], 0), 0};
     point p2 = {&pts2(nzc[i], 0), 0};
 
-    double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    //double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    double r = distance_entries[i];
     double dr_dtheta = this->ddfn_dtheta(p1.p, p2.p, param_i, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     entries[i] = this->dwfn_dr(r, dr_dtheta, this->wp);
   }

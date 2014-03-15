@@ -39,9 +39,10 @@ def train_hyperparams(X,
                       cov_fic,
                       noise_var,
                       noise_prior,
-                      optimize_xu=False):
+                      optimize_xu=False,
+                      sparse_invert=False):
 
-    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu, sparse_invert=False, build_tree=False)
+    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu, sparse_invert=sparse_invert, build_tree=False)
 
     result, rounds = bfgs_bump(nllgrad=nllgrad, x0=x0,
                        options={'disp': True}, bounds=bounds)
@@ -50,11 +51,11 @@ def train_hyperparams(X,
     noise_var, cov_main, cov_fic = covs_from_vector(result.x)
     return noise_var, cov_main, cov_fic
 
-def choose_best_hparams(covs, X, y, noise_prior):
+def choose_best_hparams(covs, X, y, noise_prior, sparse_invert=False):
 
     noise_var, cov_main, cov_fic = covs[0]
 
-    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, sparse_invert=False, build_tree=False)
+    nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, sparse_invert=sparse_invert, build_tree=False)
 
     best_ll = np.float('-inf')
     for (noise_var, cov_main, cov_fic) in covs:
@@ -116,7 +117,7 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
     for i in range(random_restarts):
         X, y = subsample_data(X_full, y_full, n_train_hyper)
 
-        noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov_main, cov_fic, noise_var, ln, optimize_xu=optimize_xu)
+        noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov_main, cov_fic, noise_var, ln, optimize_xu=optimize_xu, sparse_invert=True)
         covs.append((noise_var, cov_main, cov_fic))
 
 

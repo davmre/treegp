@@ -86,8 +86,8 @@ class TestGP(unittest.TestCase):
     def test_sparse_gradient(self):
 
         gp = GP(X=self.X, y=self.y, noise_var=self.noise_var, cov_main=self.cov, compute_ll=True, compute_grad=True)
-        g_sparse = gp._log_likelihood_gradient(None, None, gp.Kinv)
-        g_dense = gp._log_likelihood_gradient(None, None, gp.Kinv.todense())
+        g_sparse = gp._log_likelihood_gradient(None, gp.Kinv)
+        g_dense = gp._log_likelihood_gradient(None, gp.Kinv.todense())
         self.assertTrue( (np.abs(g_sparse - g_dense) < 0.0001 ).all() )
 
     def test_SE_gradient(self):
@@ -169,7 +169,8 @@ class TestSemiParametric(unittest.TestCase):
                      compute_ll=True,
                      compute_grad=True,
                      sparse_threshold=0,
-                     build_tree=False)
+                     build_tree=False,
+                     sparse_invert=True)
 
 
     def test_param_recovery(self):
@@ -214,7 +215,12 @@ class TestSemiParametric(unittest.TestCase):
             kp[i] -= eps
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
-        self.assertTrue( (np.abs(grad - empirical_grad) < 0.01 ).all() )
+        self.assertTrue( (np.abs(grad - empirical_grad) < 0.001 ).all() )
+
+    def test_sparse_gradient(self):
+        g_sparse = self.gp._log_likelihood_gradient(self.y1, self.gp.Kinv)
+        g_dense = self.gp._log_likelihood_gradient(self.y1, self.gp.Kinv.todense())
+        self.assertTrue( (np.abs(g_sparse - g_dense) < 0.00001 ).all() )
 
 
     def test_load_save(self):
@@ -384,8 +390,8 @@ class TestCSFIC(unittest.TestCase):
         self.assertTrue((v1 == v2).all())
 
     def test_gradient(self):
-        cov_main = GPCov(wfn_params=[1.0,], dfn_params=[ 2.5,], wfn_str="compact2", dfn_str="euclidean")
-        cov_fic = GPCov(wfn_params=[1.0,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        cov_main = GPCov(wfn_params=[.5,], dfn_params=[ 2.5,], wfn_str="compact2", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.2,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
         noise_var = 1.0
 
         gp = GP(X=self.X,
@@ -395,8 +401,10 @@ class TestCSFIC(unittest.TestCase):
                  cov_fic = cov_fic,
                  compute_ll=True,
                  compute_grad=True,
+                 compute_xu_grad=True,
                  sparse_threshold=0,
-                 build_tree=False)
+                 build_tree=False,
+                sparse_invert=True)
 
         grad = gp.ll_grad
 
@@ -417,6 +425,28 @@ class TestCSFIC(unittest.TestCase):
             empirical_grad[i] = (l2 - l1)/ (2*eps)
 
         self.assertTrue( (np.abs(grad - empirical_grad) < 1e-6 ).all() )
+
+
+    def test_sparse_gradient(self):
+        cov_main = GPCov(wfn_params=[.5,], dfn_params=[ 2.5,], wfn_str="compact2", dfn_str="euclidean")
+        cov_fic = GPCov(wfn_params=[1.2,], dfn_params=[ 1.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        noise_var = 1.0
+        gp = GP(X=self.X,
+                 y=self.y1,
+                 noise_var = noise_var,
+                 cov_main = cov_main,
+                 cov_fic = cov_fic,
+                 compute_ll=True,
+                 compute_grad=True,
+                 compute_xu_grad=True,
+                 sparse_threshold=0,
+                 build_tree=False,
+                sparse_invert=True)
+
+
+        g_sparse = gp._log_likelihood_gradient(self.y1, gp.Kinv)
+        g_dense = gp._log_likelihood_gradient(self.y1, gp.Kinv.todense())
+        self.assertTrue( (np.abs(g_sparse - g_dense) < 0.00001 ).all() )
 
 
 if __name__ == '__main__':
