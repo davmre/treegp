@@ -249,6 +249,7 @@ class TestCSFIC(unittest.TestCase):
 
         self.u = np.array(((-2.0,), (2.0,)))
 
+        """
         def covar_matrix(x, k):
             n = len(x)
             K = np.zeros((n,n))
@@ -260,7 +261,8 @@ class TestCSFIC(unittest.TestCase):
         K1 = covar_matrix(x, k1)
 
         np.random.seed(0)
-        #self.y1 = np.random.multivariate_normal(mean=np.zeros((len(x),)), cov=K1)
+        self.y1 = np.random.multivariate_normal(mean=np.zeros((len(x),)), cov=K1)
+        """
         self.y1 = np.array([-1.02804007, -1.54448568, -0.31653812, -0.46768499, 0.67463927, 1.06519473, -1.39472442, -0.72392324, -2.99133689, -0.59922449, -3.70430871, -1.75810012, -0.80376896, -0.50514541, -0.5459166, 1.6353825, -1.13032502, 0.80372166, -0.01374143, -1.16083918, -1.6099601, -4.37523678, -1.53780366, -2.98047752, -3.41214803])
 
 
@@ -448,6 +450,155 @@ class TestCSFIC(unittest.TestCase):
         g_dense = gp._log_likelihood_gradient(self.y1, gp.Kinv.todense())
         self.assertTrue( (np.abs(g_sparse - g_dense) < 0.00001 ).all() )
 
+class TestCSFICSemiParametric(unittest.TestCase):
+
+    def setUp(self):
+        N = 25
+        x = np.linspace(-5,5,N)
+        self.X = np.reshape(x, (-1, 1))
+
+        self.u = np.array(((-2.0,), (2.0,)))
+
+        self.basis = 'poly3'
+        H, self.featurizer, self.featurizer_recovery = featurizer_from_string(self.X, self.basis, extract_dim=0)
+
+        self.beta = np.array([9.91898792e-01,  -1.62113090e+00,   3.15437605e+00,   1.25732838e+00])*10
+        self.B = np.eye(4) * 9
+        self.b = np.zeros((4,))
+
+        self.p = np.dot(H, self.beta)
+
+        f1 = np.array([-1.02804007, -1.54448568, -0.31653812, -0.46768499, 0.67463927, 1.06519473, -1.39472442, -0.72392324, -2.99133689, -0.59922449, -3.70430871, -1.75810012, -0.80376896, -0.50514541, -0.5459166, 1.6353825, -1.13032502, 0.80372166, -0.01374143, -1.16083918, -1.6099601, -4.37523678, -1.53780366, -2.98047752, -3.41214803])
+        self.y1 = f1 + self.p
+
+        self.cov_main = GPCov(wfn_params=[0.3,], dfn_params=[ 0.5,], wfn_str="compact2", dfn_str="euclidean")
+        self.cov_fic = GPCov(wfn_params=[0.2,], dfn_params=[ 2.5,], wfn_str="se", dfn_str="euclidean", Xu = self.u)
+        self.noise_var = .001
+
+
+        self.gp = GP(X=self.X,
+                     y=self.y1,
+                     noise_var = self.noise_var,
+                     cov_main = self.cov_main,
+                     cov_fic = self.cov_fic,
+                     basis = self.basis,
+                     featurizer_recovery = self.featurizer_recovery,
+                     param_mean=self.b,
+                     param_cov=self.B,
+                     compute_ll=True,
+                     compute_grad=True,
+                     compute_xu_grad=True,
+                     sparse_threshold=0,
+                     build_tree=False,
+                     sparse_invert=True)
+
+
+    def test_load_save(self):
+
+        gp1 = self.gp
+        gp1.save_trained_model("test_semi_csfic.npz")
+        gp2 = GP(fname="test_semi_csfic.npz", build_tree=False)
+
+        pts = np.reshape(np.linspace(-5, 5, 20), (-1, 1))
+        p1 = gp1.predict(pts)
+        v1 = gp1.variance(pts)
+        p2 = gp2.predict(pts)
+        v2 = gp2.variance(pts)
+
+        self.assertTrue((p1 == p2).all())
+        self.assertTrue((v1 == v2).all())
+
+
+    def test_gradient(self):
+        grad = self.gp.ll_grad
+
+        nllgrad, x0, bounds, build_gp, _ = optimize_gp_hyperparams(X=self.X, y=self.y1, basis=self.basis, featurizer_recovery=self.featurizer_recovery, param_mean=self.b, param_cov=self.B, noise_var=self.noise_var, cov_main=self.cov_main, cov_fic=self.cov_fic)
+
+        n = len(x0)
+        kp  = x0
+        eps = 1e-6
+        empirical_grad = np.zeros(n)
+        for i in range(n):
+            kp[i] -= eps
+            gp1 = build_gp(kp, compute_ll=True)
+            l1 = gp1.log_likelihood()
+            kp[i] += 2*eps
+            gp2 = build_gp(kp, compute_ll=True)
+            l2 = gp2.log_likelihood()
+            kp[i] -= eps
+            empirical_grad[i] = (l2 - l1)/ (2*eps)
+
+
+
+        self.assertTrue( (np.abs(grad - empirical_grad) < 0.001 ).all() )
+
+    def test_sparse_gradient(self):
+        g_sparse = self.gp._log_likelihood_gradient(self.y1, self.gp.Kinv)
+        g_dense = self.gp._log_likelihood_gradient(self.y1, self.gp.Kinv.todense())
+        self.assertTrue( (np.abs(g_sparse - g_dense) < 0.00001 ).all() )
+
+    def test_limiting_csfic(self):
+        gp_smallparam = GP(X=self.X,
+                           y=self.y1,
+                           noise_var = self.noise_var,
+                           cov_main = self.cov_main,
+                           cov_fic = self.cov_fic,
+                           basis = self.basis,
+                           featurizer_recovery = self.featurizer_recovery,
+                           param_mean=np.zeros(self.b.shape),
+                           param_cov=np.eye(len(self.b)) * 0.000000000000001,
+                           compute_ll=True,
+                           sparse_threshold=0,
+                           build_tree=False,
+                           sparse_invert=True)
+
+        gp_noparam = GP(X=self.X,
+                        y=self.y1,
+                        noise_var = self.noise_var,
+                        cov_main = self.cov_main,
+                        cov_fic = self.cov_fic,
+                        basis = None,
+                        compute_ll=True,
+                        sparse_threshold=0,
+                        build_tree=False,
+                        sparse_invert=True)
+
+
+        # not sure why this doesn't pass
+        self.assertGreater(self.gp.ll, gp_smallparam.ll)
+        self.assertAlmostEqual(gp_smallparam.ll, gp_noparam.ll, places=5)
+
+    def test_limiting_semiparametric(self):
+        cov_fic_tiny = GPCov(wfn_params=[0.00000000000001,], dfn_params=[ 0.0000000000001,], wfn_str="compact2", dfn_str="euclidean", Xu = self.u)
+        gp_smallfic = GP(X=self.X,
+                           y=self.y1,
+                           noise_var = self.noise_var,
+                           cov_main = self.cov_main,
+                           cov_fic = cov_fic_tiny,
+                           basis = self.basis,
+                           featurizer_recovery = self.featurizer_recovery,
+                           param_mean=self.b,
+                           param_cov=self.B,
+                           compute_ll=True,
+                           sparse_threshold=0,
+                           build_tree=False,
+                           sparse_invert=True)
+
+        gp_nofic = GP(X=self.X,
+                        y=self.y1,
+                        noise_var = self.noise_var,
+                        cov_main = self.cov_main,
+                        cov_fic = None,
+                        basis = self.basis,
+                        featurizer_recovery = self.featurizer_recovery,
+                        param_mean=self.b,
+                        param_cov=self.B,
+                        compute_ll=True,
+                        sparse_threshold=0,
+                        build_tree=False,
+                        sparse_invert=True)
+
+        self.assertAlmostEqual(gp_smallfic.ll, gp_nofic.ll, places=5)
 
 if __name__ == '__main__':
     unittest.main()

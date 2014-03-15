@@ -431,13 +431,15 @@ class GP(object):
                     self.K = self.sparsify(self.K)
                 alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
                 self.Kinv = self.sparsify(Kinv)
+                print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
             else:
                 alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
                 if build_tree:
                     self.Kinv = self.sparsify(Kinv)
+                    print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
                 else:
                     self.Kinv=np.matrix(Kinv)
-            print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+
 
             # if we have any additive low-rank covariances, compute the appropriate terms
             if H is not None or cov_fic is not None:
