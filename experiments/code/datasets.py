@@ -2,7 +2,7 @@ import numpy as np
 import cPickle as pickle
 import os, errno
 
-BASEDIR="/home/dmoore/python/sparsegp/experiments/"
+BASEDIR="experiments/"
 
 def mkdir_p(path):
     try:
