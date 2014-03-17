@@ -408,7 +408,6 @@ class GP(object):
                 self.ll = np.float('-inf')
                 return
 
-
             self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
             # compute sparse kernel matrix
@@ -417,6 +416,7 @@ class GP(object):
             else:
                 self.K = self.kernel(self.X, self.X, identical=True, predict_tree=self.predict_tree)
 
+
             # setup the parameteric features, if applicable, and return the feature representation of X
             H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
 
@@ -424,6 +424,8 @@ class GP(object):
                 self.K, self.K_fic_uu, self.K_fic_un = self.init_csfic_kernel(self.K)
             else:
                 self.K_fic_uu, self.K_fic_un = None, None
+
+            print "built kernel matrix"
 
             # invert kernel matrix
             if sparse_invert:
@@ -440,6 +442,7 @@ class GP(object):
                 else:
                     self.Kinv=np.matrix(Kinv)
 
+            print "inverted kernel matrix"
 
             # if we have any additive low-rank covariances, compute the appropriate terms
             if H is not None or cov_fic is not None:
@@ -912,7 +915,7 @@ class GP(object):
         d['ymean'] = self.ymean,
         d['alpha_r'] =self.alpha_r,
         d['Kinv'] =self.Kinv,
-        d['K'] =self.K,
+        #d['K'] =self.K,
         d['sparse_threshold'] =self.sparse_threshold,
         d['noise_var'] =self.noise_var,
         d['ll'] =self.ll,
@@ -950,7 +953,7 @@ class GP(object):
             self.Luu = npzfile['Luu'][0]
 
         self.Kinv = npzfile['Kinv'][0]
-        self.K = npzfile['K'][0]
+        #self.K = npzfile['K'][0]
         self.sparse_threshold = npzfile['sparse_threshold'][0]
         self.ll = npzfile['ll'][0]
 
@@ -978,11 +981,13 @@ class GP(object):
         del npzfile.f
         npzfile.close()
 
+        import pdb; pdb.set_trace()
+
         self.n = self.X.shape[0]
         sparse_invert = scipy.sparse.issparse(self.Kinv)
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
         if build_tree:
-            self.factor = scikits.sparse.cholmod.cholesky(self.K)
+            #self.factor = scikits.sparse.cholmod.cholesky(self.K)
             self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_size=leaf_bin_size)
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
