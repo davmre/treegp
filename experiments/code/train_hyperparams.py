@@ -219,7 +219,7 @@ initial_cs_params = {
     "seismic_as12": [10.0,300.0],
     "seismic_tt_FITZ": [10.0,300.0],
     "seismic_tt_ASAR": [10.0,300.0],
-    "sarcos": [10,] * 21,
+    "sarcos": [80,] * 21,
 }
 
 initial_se_params = {
@@ -229,7 +229,7 @@ initial_se_params = {
     "housing_age": [8., 8.],
     "housing_val": [8., 8.],
     "housing_inc": [8., 8.],
-    "sarcos": [100,] * 21,
+    "sarcos": [300,] * 21,
     "seismic_fitz": [300.0,300.0],
     "seismic_as12": [300.0,300.0],
     "seismic_tt_FITZ": [300.0,300.0],
