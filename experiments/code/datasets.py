@@ -54,7 +54,7 @@ def save_hparams(dataset_name, model_name, cov_main, cov_fic, noise_var, tag=Non
 
 def gp_fname(dataset_name, model_name, n=None, tag=None):
     tstr = "" if tag is None else "_%s" % tag
-    fname = "trained.gp" if n is None else "trained%s_%d.gp" % (tag, n)
+    fname = "trained%s.gp" % tstr if n is None else "trained%s_%d.gp" % (tstr, n)
     return os.path.join(BASEDIR, "models", dataset_name, model_name, fname)
 
 def predict_results_fname(dataset_name, model_name, tag):

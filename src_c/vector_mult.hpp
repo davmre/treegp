@@ -128,10 +128,10 @@ public:
 
 
   pyublas::numpy_matrix<double> kernel_matrix(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, bool distance_only);
-  pyublas::numpy_matrix<double> sparse_training_kernel_matrix(const pyublas::numpy_matrix<double> &pts, double max_distance);
+  pyublas::numpy_matrix<double> sparse_training_kernel_matrix(const pyublas::numpy_matrix<double> &pts, double max_distance, bool distance_only);
   pyublas::numpy_matrix<double> kernel_deriv_wrt_xi(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k);
-  pyublas::numpy_matrix<double> kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i);
-  pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i);
+  pyublas::numpy_matrix<double> kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i,  bool symmetric, const pyublas::numpy_matrix<double> distances);
+  pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries);
 
   void dump_tree(const std::string &fname);
 
