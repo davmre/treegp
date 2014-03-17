@@ -40,11 +40,18 @@ def train_hyperparams(X,
                       noise_var,
                       noise_prior,
                       optimize_xu=False,
-                      sparse_invert=False):
+                      sparse_invert=False,
+                      save_progress = None):
 
     nllgrad, x0, bounds, build_gp, covs_from_vector = optimize_gp_hyperparams(noise_var=noise_var, cov_main=cov_main, cov_fic=cov_fic, X=X, y=y, noise_prior=noise_prior, optimize_Xu=optimize_xu, sparse_invert=sparse_invert, build_tree=False)
 
-    result, rounds = bfgs_bump(nllgrad=nllgrad, x0=x0,
+    def nllgrad_checkpoint(v):
+        noise_var, cov_main, cov_fic = covs_from_vector(v)
+        save_progress(noise_var, cov_main, cov_fic)
+        return nllgrad(v)
+    f_obj = nllgrad if not save_progress else nllgrad_checkpoint
+
+    result, rounds = bfgs_bump(nllgrad=f_obj, x0=x0,
                        options={'disp': True}, bounds=bounds)
 
     print "optimized in", rounds, "rounds"
@@ -115,9 +122,14 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
 
     covs = []
     for i in range(random_restarts):
+
+        def save_progress(noise_var, cov_main, cov_fic):
+            save_hparams(dataset_name, "csfic%d" % n_fic, cov_main, cov_fic, noise_var, tag="%d_round%d" % (n_train_hyper,i) )
+
+
         X, y = subsample_data(X_full, y_full, n_train_hyper)
 
-        noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov_main, cov_fic, noise_var, ln, optimize_xu=optimize_xu, sparse_invert=True)
+        noise_var, cov_main, cov_fic = train_hyperparams(X, y, cov_main, cov_fic, noise_var, ln, optimize_xu=optimize_xu, sparse_invert=True, save_progress=save_progress)
         covs.append((noise_var, cov_main, cov_fic))
 
 
@@ -128,6 +140,8 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
     save_hparams(dataset_name, "csfic%d" % n_fic, cov_main_best, cov_fic_best, noise_var_best, tag="%d%s" % (n_train_hyper,optim_tag) )
 
 def train_standard(dataset_name, dfn_params, wfn_str="se", dfn_str="euclidean", n_train_hyper=1500, random_restarts=3, dfn_priors=[]):
+
+
     X_full, y_full = training_data(dataset_name)
 
     sparse_invert  = (wfn_str == "compact2")
@@ -146,9 +160,15 @@ def train_standard(dataset_name, dfn_params, wfn_str="se", dfn_str="euclidean", 
 
     covs = []
     for i in range(random_restarts):
+
+        def save_progress(noise_var, cov_main, cov_fic):
+            save_hparams(dataset_name, wfn_str, cov_main, cov_fic, noise_var, tag="%d_round%d" % (n_train_hyper,i) )
+
+
         X, y = subsample_data(X_full, y_full, n_train_hyper)
 
-        noise_var, cov_main, _,  = train_hyperparams(X, y, cov_main, None, noise_var, ln, sparse_invert=sparse_invert)
+
+        noise_var, cov_main, _,  = train_hyperparams(X, y, cov_main, None, noise_var, ln, sparse_invert=sparse_invert, save_progress=save_progress)
         covs.append((noise_var, cov_main, None))
 
     X_eval, y_eval = subsample_data(X_full, y_full, n_train_hyper)
