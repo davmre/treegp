@@ -388,8 +388,8 @@ class GP(object):
                  compute_xu_grad=False,
                  sparse_threshold=1e-10,
                  K = None,
-                 sort_events=False,
-                 build_tree=True,
+                 sort_events=True,
+                 build_tree=False,
                  sparse_invert=True,
                  center_mean=False,
                  leaf_bin_size = 0): # WARNING: bin sizes > 0 currently lead to memory leaks
