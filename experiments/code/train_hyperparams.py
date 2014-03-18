@@ -210,11 +210,12 @@ dfn_cs_priors['seismic_as12'] = [InvGamma(10.0, 200.0), InvGamma(10.0, 400.0)]
 dfn_cs_priors['seismic_fitz'] = [InvGamma(10.0, 200.0), InvGamma(10.0, 400.0)]
 dfn_cs_priors['seismic_tt_ASAR'] = [InvGamma(10.0, 200.0), InvGamma(10.0, 400.0)]
 dfn_cs_priors['seismic_tt_FITZ'] = [InvGamma(10.0, 200.0), InvGamma(10.0, 400.0)]
+dfn_cs_priors['sarcos'] = [LogNormal(4.5, 1.0),] * 21
 
 dfn_se_priors = defaultdict(list)
 dfn_se_priors['seismic_fitz'] = [LogNormal(np.log(500.0), 1.0), LogNormal(np.log(500.0), 1.0)]
 dfn_se_priors['seismic_as12'] = [LogNormal(np.log(500.0), 1.0), LogNormal(np.log(500.0), 1.0)]
-
+dfn_cs_priors['sarcos'] = [LogNormal(6, 1.0),] * 21
 
 def train_hparams(dataset, fic=None, se=False, optimize_xu=False, n_hyper=2500, random_restarts=1):
 
