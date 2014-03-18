@@ -19,7 +19,7 @@ def bfgs_bump(nllgrad, x0, bounds, options, max_rounds=5, **kwargs):
     while f2 <  f1 - .0001 and rounds < max_rounds:
         rounds += 1
         result = scipy.optimize.minimize(fun=nllgrad, x0=x0,
-                                         method="L-BFGS-B", jac=True,
+                                         method="TNC", jac=True,
                                          options=options, bounds=bounds, **kwargs)
 
         grad_options = dict()
