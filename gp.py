@@ -400,7 +400,7 @@ class GP(object):
             self.load_trained_model(fname, build_tree=build_tree, leaf_bin_size=leaf_bin_size)
         else:
             if sort_events:
-                X, y = self.sort_morton(X, y) # arrange events by
+                X, y = sort_morton(X, y) # arrange events by
                                               # lon/lat, as a
                                               # heuristic to expose
                                               # block structure in the
