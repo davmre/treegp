@@ -89,6 +89,29 @@ def unpack_gpcov(d, prefix):
     except KeyError:
         return None
 
+
+def sort_morton(X, y):
+
+    def cmp_zorder(a, b):
+            j = 0
+            k = 0
+            x = 0
+            dim = len(a)
+            for k in range(dim):
+                y = a[k] ^ b[k]
+                if less_msb(x, y):
+                    j = k
+                    x = y
+            return a[j] - b[j]
+
+    def less_msb(x, y):
+        return x < y and x < (x ^ y)
+
+    Xint = np.array((X + np.min(X, axis=0)) * 10000, dtype=int)
+    p = sorted(np.arange(Xint.shape[0]), cmp= lambda i,j : cmp_zorder(Xint[i,:], Xint[j,:]))
+    return np.array(X[p,:], copy=True), np.array(y[p], copy=True)
+
+
 class GPCov(object):
     def __init__(self, wfn_params, dfn_params,
                  wfn_str="se", dfn_str="euclidean",
@@ -231,7 +254,6 @@ class GP(object):
         X_sorted = np.array(combined_sorted[:, :-1], copy=True, dtype=float)
         y_sorted = combined_sorted[:, -1].flatten()
         return X_sorted, y_sorted
-
 
 
     ##############################################################################
@@ -378,7 +400,7 @@ class GP(object):
             self.load_trained_model(fname, build_tree=build_tree, leaf_bin_size=leaf_bin_size)
         else:
             if sort_events:
-                X, y = self.sort_events(X, y) # arrange events by
+                X, y = self.sort_morton(X, y) # arrange events by
                                               # lon/lat, as a
                                               # heuristic to expose
                                               # block structure in the
