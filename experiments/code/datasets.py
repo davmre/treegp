@@ -12,18 +12,32 @@ def mkdir_p(path):
             pass
         else: raise
 
+def get_data_dir(dataset_name):
+    d = os.path.join(BASEDIR, "datasets", dataset_name)
+    mkdir_p(d)
+    return d
+
 def test_data(dataset_name):
-    data_dir = os.path.join(BASEDIR, "datasets", dataset_name)
-    X_test = np.loadtxt(os.path.join(data_dir, "X_test.txt"), skiprows=1, delimiter=',')
-    y_test = np.loadtxt(os.path.join(data_dir, "y_test.txt"), skiprows=1, delimiter=',')
+    data_dir = get_data_dir(dataset_name)
+
+    try:
+        X_test = np.loadtxt(os.path.join(data_dir, "X_test.txt"), skiprows=1, delimiter=',')
+        y_test = np.loadtxt(os.path.join(data_dir, "y_test.txt"), skiprows=1, delimiter=',')
+    except IOError:
+        X_test = np.load(os.path.join(data_dir, "X_test.npy"))
+        y_test = np.load(os.path.join(data_dir, "y_test.npy"))
 
     return X_test, y_test
 
 def training_data(dataset_name, n=None):
-    data_dir = os.path.join(BASEDIR, "datasets", dataset_name)
+    data_dir = get_data_dir(dataset_name)
 
-    X_train = np.loadtxt(os.path.join(data_dir, "X_train.txt"), skiprows=1, delimiter=',')
-    y_train = np.loadtxt(os.path.join(data_dir, "y_train.txt"), skiprows=1, delimiter=',')
+    try:
+        X_train = np.loadtxt(os.path.join(data_dir, "X_train.txt"), skiprows=1, delimiter=',')
+        y_train = np.loadtxt(os.path.join(data_dir, "y_train.txt"), skiprows=1, delimiter=',')
+    except IOError:
+        X_train = np.load(os.path.join(data_dir, "X_train.npy"))
+        y_train = np.load(os.path.join(data_dir, "y_train.npy"))
 
     if n is not None:
         X_train = np.array(X_train[:n,:], copy=True)

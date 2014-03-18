@@ -12,7 +12,7 @@ import scipy.stats
 from datasets import *
 from prediction import trained_gp
 
-def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, cutoff_rule=1):
+def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, cutoff_rule=2):
     X_test, y_test = test_data(dataset_name)
     gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True)
     print "loaded GP, evaluating timings on %d test points..." % test_n
@@ -61,6 +61,7 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
         tree_predict_terms[i] = gp.predict_tree.fcalls
 
 
+    gp.nonqf_time = 0
     for i in range(test_n):
         t4 = time.time()
         sparse_covar[i] = gp.covariance(X_test[i:i+1,:])
@@ -115,7 +116,6 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
     best_ei = -1
     best_ej = -1
 
-
     if cutoff_rule == 0:
         eps_rels =  (2,4,8,16)
         eps_abses = (1,)
@@ -123,8 +123,9 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
         eps_rels =  (2,4,8,16)
         eps_abses = (4,5,6,8)
     elif cutoff_rule == 2:
-        eps_rels = (4,)
-        eps_abses = (1,2,3,)
+        eps_rels = (3,)
+        eps_abses = (0,)
+
 
     tree_covar = np.zeros((len(eps_rels), len(eps_abses), test_n))
     tree_covar_terms = np.zeros((len(eps_rels), len(eps_abses), test_n), dtype=int)
@@ -163,6 +164,8 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
             f.write("tree covar%d_%d abs errors: %s \n" %  (epsm, eps_abs, strstats(np.abs(tree_covar[e_i, e_j, :] - sparse_covar))))
             f.write("\n")
             f.flush()
+
+
 
     f.write("naive predict times: %s\n" % strstats(naive_predict_times))
     f.write("\n")
