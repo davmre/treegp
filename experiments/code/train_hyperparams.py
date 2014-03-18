@@ -19,7 +19,7 @@ def bfgs_bump(nllgrad, x0, bounds, options, max_rounds=5, **kwargs):
     while f2 <  f1 - .0001 and rounds < max_rounds:
         rounds += 1
         result = scipy.optimize.minimize(fun=nllgrad, x0=x0,
-                                         method="TNC", jac=True,
+                                         method="L-BFGS-B", jac=True,
                                          options=options, bounds=bounds, **kwargs)
 
         grad_options = dict()
@@ -139,12 +139,11 @@ def train_csfic(dataset_name, dfn_params_fic, dfn_params_cs, dfn_str="euclidean"
     optim_tag = "_xu" if optimize_xu else ""
     save_hparams(dataset_name, "csfic%d" % n_fic, cov_main_best, cov_fic_best, noise_var_best, tag="%d%s" % (n_train_hyper,optim_tag) )
 
-def train_standard(dataset_name, dfn_params, wfn_str="se", dfn_str="euclidean", n_train_hyper=1500, random_restarts=3, dfn_priors=[]):
+def train_standard(dataset_name, dfn_params, wfn_str="se", dfn_str="euclidean", n_train_hyper=1500, random_restarts=3, dfn_priors=[], sparse_invert=False):
 
 
     X_full, y_full = training_data(dataset_name)
 
-    sparse_invert  = (wfn_str == "compact2")
     ln = LogNormal(0.0, 2.0)
 
     if len(dfn_priors) == 0:
@@ -207,7 +206,6 @@ def hardcode_snow():
     save_hparams("snowm", "csfic20" , cov_main, cov_fic, .1377, tag="matlab" )
 
 
-
 initial_cs_params = {
     "snow": [1.5, .1, .1, 1.5],
     "precip_all": [.2, .2, 2],
@@ -255,11 +253,15 @@ def train_hparams(dataset, fic=None, se=False, optimize_xu=False, n_hyper=2500, 
     if dataset.startswith("seismic"):
         dfn_str="lld"
 
+    sparse_invert_se = False
+    if (dataset == "snow" or dataset == "tco"):
+	sparse_invert_se = True
+
     if fic is None:
         if se:
-            train_standard(dataset, initial_se_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts, dfn_priors=dfn_se_priors[dataset], wfn_str="se")
+            train_standard(dataset, initial_se_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts, dfn_priors=dfn_se_priors[dataset], wfn_str="se", sparse_invert=sparse_invert_se)
         else:
-            train_standard(dataset, initial_cs_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts, dfn_priors=dfn_cs_priors[dataset], wfn_str= "compact2")
+            train_standard(dataset, initial_cs_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, random_restarts=random_restarts, dfn_priors=dfn_cs_priors[dataset], wfn_str= "compact2", sparse_invert=True)
     else:
         assert(not se)
         train_csfic(dataset, initial_se_params[dataset], initial_cs_params[dataset], dfn_str=dfn_str, n_train_hyper=n_hyper, n_fic=int(fic), random_restarts=random_restarts, dfn_fic_priors=dfn_se_priors[dataset], dfn_cs_priors=dfn_cs_priors[dataset], optimize_xu=optimize_xu)
