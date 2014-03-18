@@ -788,6 +788,10 @@ class GP(object):
 
         if not parametric_only:
             gp_cov = self.kernel(X1, X1, identical=include_obs)
+
+            if cutoff_rule == 2:
+                eps_abs = float(eps * gp_cov)
+
             t1 = time.time()
             if self.n > 0:
                 qf = np.zeros(gp_cov.shape)
@@ -1245,12 +1249,12 @@ class GP(object):
         term1 = np.dot(alpha.T, np.dot(dQ, alpha))
         """
 
-        # term2 = y^T Kinv (d/dtheta Delta) Kinv y
+        # term2 = y^T Kinv (d/dtheta Lambda) Kinv y
         dD = np.dot(dKuu_di, D)
-        ddelta_diag = 2 * np.sum(np.multiply(dKnu_di.T, D), axis=0)
-        ddelta_diag -= np.sum(D * dD, axis=0)
-        ddelta_diag  = np.reshape(ddelta_diag, alpha.shape)
-        term2 = np.dot(alpha.T, np.multiply(ddelta_diag, alpha))
+        dLambda_diag = 2 * np.sum(np.multiply(dKnu_di.T, D), axis=0)
+        dLambda_diag -= np.sum(D * dD, axis=0)
+        dLambda_diag  = np.reshape(dLambda_diag, alpha.shape)
+        term2 = np.dot(alpha.T, np.multiply(dLambda_diag, alpha))
 
         prod = term1 - term2
         """
@@ -1263,10 +1267,10 @@ class GP(object):
 
         # now we compute the trace part
         # tr = tr(M * dKdi)
-        #     = tr( (Kinv - tmp^Ttmp) (dQ + dDelta)  )
-        #     = tr( Kinv (dQ + dDelta) ) - tr(tmp^Ttmp dQ) - tr(tmp^Ttmp dDelta)
+        #     = tr( (Kinv - tmp^Ttmp) (dQ + dLambda)  )
+        #     = tr( Kinv (dQ + dLambda) ) - tr(tmp^Ttmp dQ) - tr(tmp^Ttmp dLambda)
         #     = tr1                      - tr2             - tr3
-        # where M = (K_cs + Delta + K_fu K_uu^-1 K_uf)^-1
+        # where M = (K_cs + Lambda + K_fu K_uu^-1 K_uf)^-1
         #       dQ = d/dtheta  K_fu K_uu^-1 K_uf
 
         # tr1 = tr( Kinv dQ )
@@ -1303,17 +1307,17 @@ class GP(object):
         TDtduu = np.dot(TDt, dKuu_di)
         tr2 = 2*np.sum(np.multiply(T_dnut, TDt)) - np.sum(np.multiply(TDt, TDtduu))
 
-        # tr3 = tr(tmp^T tmp dDelta)
+        # tr3 = tr(tmp^T tmp dLambda)
         diag_tmpTtmp = np.sum(tmp**2, axis=0)
-        tr3 = -np.dot(diag_tmpTtmp, ddelta_diag) # negated because our ddelta_diag is negated
+        tr3 = -np.dot(diag_tmpTtmp, dLambda_diag) # negated because our dLambda_diag is negated
 
         tr = tr1 - tr2 - tr3
         """
         for debugging, we should have:
         tmp2 = np.dot(dKnu_di, D)
-        dQdDelta = tmp2 + tmp2.T - np.dot(D.T, np.dot(dKuu_di, D))
-        dDelta = np.diag(np.diag(dQdDelta))
-        dQ = dQdDelta - dDelta
+        dQdLambda = tmp2 + tmp2.T - np.dot(D.T, np.dot(dKuu_di, D))
+        dLambda = np.diag(np.diag(dQdLambda))
+        dQ = dQdLambda - dLambda
         tr = np.trace(np.dot(self.Kinv.todense() - np.dot(tmp.T, tmp), dQ))
         """
         dlldi = .5 * (prod-tr)
