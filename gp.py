@@ -981,8 +981,6 @@ class GP(object):
         del npzfile.f
         npzfile.close()
 
-        import pdb; pdb.set_trace()
-
         self.n = self.X.shape[0]
         sparse_invert = scipy.sparse.issparse(self.Kinv)
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)

@@ -79,12 +79,13 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
         sparse_covar_spkernel_qftimes[i] = gp.qf_time
         sparse_covar_spkernel_nonqftimes[i] = gp.nonqf_time
 
+    """
     for i in range(test_n):
         t41 = time.time()
         sparse_covar_spkernel_solve[i] = gp.covariance_spkernel_solve(X_test[i:i+1,:])
         t51 = time.time()
         sparse_covar_spkernel_solve_times[i] = t51-t41
-
+    """
 
     has_dense = True
     try:
@@ -181,9 +182,12 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, c
     f.write("sparse covar spkernel nqftimes: %s\n" % strstats(sparse_covar_spkernel_nonqftimes))
     f.write("sparse covar spkernel error: %f\n" % np.mean(np.abs(sparse_covar_spkernel_solve - sparse_covar)))
     f.write("\n")
+
+    """
     f.write("sparse covar spkernel_solve times: %s\n" % strstats(sparse_covar_spkernel_solve_times))
     f.write("sparse covar spkernel_solve error: %f\n" % np.mean(np.abs(sparse_covar_spkernel_solve - sparse_covar)))
     f.write("\n")
+    """
 
     f.write("actual vars: %s\n" % strstats(sparse_covar))
     f.write("actual qfs: %s\n" % strstats(1-sparse_covar))
