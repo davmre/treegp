@@ -82,6 +82,23 @@ def trained_gp(dataset_name, model_name, n=None, tag=None, **kwargs):
              **kwargs)
     sgp.save_trained_model(fname)
     print "saved trained GP to", fname
+
+    stats_fname = fname[:-3] + "_stats.txt"
+    with open(stats_fname, 'w') as f:
+        f.write("main hyperparams: %s\n" % cov_main)
+        f.write("fic hyperparams: %s\n" % cov_fic)
+
+        if scipy.sparse.issparse(sgp.K):
+            nzr, nzc = sgp.K.nonzero()
+            f.write("K nonzero: %d/%d = %.3f%%\n" % (len(nzr), sgp.K.shape[0]**2, float(len(nzr))/sgp.K.shape[0]**2))
+        if scipy.sparse.issparse(sgp.Kinv):
+            nzr, nzc = sgp.Kinv.nonzero()
+            f.write("Kinv nonzero: %d/%d = %.3f%%\n" % (len(nzr), sgp.Kinv.shape[0]**2, float(len(nzr))/sgp.Kinv.shape[0]**2))
+
+        for k in sgp.timings:
+            f.write("timing %s: %.3f\n" % (k, sgp.timings[k]))
+    print "saved stats to", stats_fname
+
     return sgp
 
 def main():
