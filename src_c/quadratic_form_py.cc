@@ -59,6 +59,43 @@ double gt(void) {
    return d2;
   }
 
+double first_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, double BOUND_IGNORED, const double *params, pair_dfn_extra *p, wfn w_point, const double * wp_point) {
+   dense_hash_map<int, double> &query_cache =  *(p->query1_w_cache);
+
+   double d1, w;
+   dense_hash_map<int, double>::iterator i = query_cache.find(p2.idx1);
+   if (i == query_cache.end()) {
+     d1 = first_half_d_query_cached(p1, p2, BOUND_IGNORED, params, p);
+     w = w_point(d1, wp_point);
+     query_cache[p2.idx1] = w;
+     p->w_misses += 1;
+   } else {
+     w = query_cache[p2.idx1];
+     p->w_hits += 1;
+   }
+
+   return w;
+  }
+
+double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, double BOUND_IGNORED, const double *params, pair_dfn_extra * p, wfn w_point, const double * wp_point) {
+   dense_hash_map<int, double> &query_cache =  *(p->query2_w_cache);
+
+   double d2, w;
+   dense_hash_map<int, double>::iterator i = query_cache.find(p2.idx2);
+   if (i == query_cache.end()) {
+     d2 = second_half_d_query_cached(p1, p2, BOUND_IGNORED, params, p);
+     w = w_point(d2, wp_point);
+     query_cache[p2.idx2] = w;
+     p->w_misses += 1;
+   } else {
+     w = query_cache[p2.idx2];
+     p->w_hits += 1;
+   }
+
+   return w;
+  }
+
+
  double factored_query_distance_l2(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *params, void * extra) {
    // assume the dfn returns squared distances
    pair_dfn_extra * p = (pair_dfn_extra *) extra;
@@ -179,8 +216,8 @@ double gt(void) {
        // w_point takes an *intermediate* representation of the
        // distance, e.g. squared distance in the case of the SE
        // kernels.
-       weight = w_point(first_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+       weight = first_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
+	 * second_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
      }
      ws += weight * n.unweighted_sums[v_select];
 
@@ -205,8 +242,8 @@ double gt(void) {
 
      double exact_sum = 0;
      for (unsigned int i=0; i < n.n_extra_p; ++i) {
-       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+       double weight = first_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
+	 * second_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
 
@@ -469,6 +506,19 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    p->hits = 0;
    p->misses = 0;
 
+
+   p->query1_w_cache = new dense_hash_map<int, double>((int) (10 * log(this->n)));
+   p->query1_w_cache->set_empty_key(-1);
+   if (symmetric) {
+     p->query2_w_cache = p->query1_w_cache;
+   } else {
+     p->query2_w_cache = new dense_hash_map<int, double>((int) (10 * log(this->n)));
+     p->query2_w_cache->set_empty_key(-1);
+   }
+   p->w_hits = 0;
+   p->w_misses = 0;
+
+
    // assume there will be at least one point within three or so lengthscales,
    // so we can cut off any branch with really neligible weight.
    double weight_sofar = 0;
@@ -554,8 +604,10 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    //printf("quadratic form did %.0lf distance calculations for %d fcalls\n", ((double *)(this->distance_cache))[0], this->fcalls);
 
    delete p->query1_cache;
+   delete p->query1_w_cache;
    if (!symmetric) {
      delete p->query2_cache;
+     delete p->query2_w_cache;
    }
 
    return ws;

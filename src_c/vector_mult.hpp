@@ -148,10 +148,15 @@ struct pair_dfn_extra {
   google::dense_hash_map<long, double> *build_cache;
   google::dense_hash_map<int, double> *query1_cache;
   google::dense_hash_map<int, double> *query2_cache;
+  google::dense_hash_map<int, double> *query1_w_cache;
+  google::dense_hash_map<int, double> *query2_w_cache;
   void * dfn_extra;
   int NPTS;
   int hits;
   int misses;
+  int w_hits;
+  int w_misses;
+
 };
 
 class MatrixTree {
