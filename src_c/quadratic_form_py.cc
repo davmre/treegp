@@ -59,6 +59,55 @@ double gt(void) {
    return d2;
   }
 
+double first_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, double BOUND_IGNORED, const double *params, pair_dfn_extra *p, wfn w_point, const double * wp_point) {
+   dense_hash_map<int, double> &query_cache =  *(p->query1_w_cache);
+
+   double d1, w;
+   dense_hash_map<int, double>::iterator i = query_cache.find(p2.idx1);
+   if (i == query_cache.end()) {
+     d1 = first_half_d_query_cached(p1, p2, BOUND_IGNORED, params, p);
+     w = w_point(d1, wp_point);
+     query_cache[p2.idx1] = w;
+
+     //printf ("set first half %d to w %f for d %f\n", p2.idx1, w, d1);
+
+     p->w_misses += 1;
+   } else {
+
+     w = query_cache[p2.idx1];
+
+     ///printf ("cache hit on first half idx %d! retrieved %f vs true value %f for d %f\n", p2.idx1, w, w1, d1);
+
+     p->w_hits += 1;
+   }
+
+   return w;
+  }
+
+double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, double BOUND_IGNORED, const double *params, pair_dfn_extra * p, wfn w_point, const double * wp_point) {
+   dense_hash_map<int, double> &query_cache =  *(p->query2_w_cache);
+
+   double d2, w;
+   dense_hash_map<int, double>::iterator i = query_cache.find(p2.idx2);
+   if (i == query_cache.end()) {
+     d2 = second_half_d_query_cached(p1, p2, BOUND_IGNORED, params, p);
+     w = w_point(d2, wp_point);
+     query_cache[p2.idx2] = w;
+     p->w_misses += 1;
+   } else {
+
+     w = query_cache[p2.idx2];
+
+     // printf ("cache hit on second half %d! retrieved %f vs true value %f for d %f\n", p2.idx2, w, w2, d2);
+
+
+     p->w_hits += 1;
+   }
+
+   return w;
+  }
+
+
  double factored_query_distance_l2(const pairpoint p1, const pairpoint p2, double BOUND_IGNORED, const double *params, void * extra) {
    // assume the dfn returns squared distances
    pair_dfn_extra * p = (pair_dfn_extra *) extra;
@@ -157,7 +206,8 @@ double gt(void) {
 			const double* wp_point,
 			distfn<pairpoint>::Type dist,
 			const double * dist_params,
-			pair_dfn_extra * dist_extra) {
+			pair_dfn_extra * dist_extra,
+			bool HACK_adj_offdiag) {
    double d = n.distance_to_query; // avoid duplicate distance
 				     // calculations by assuming this
 				     // distance has already been
@@ -179,8 +229,14 @@ double gt(void) {
        // w_point takes an *intermediate* representation of the
        // distance, e.g. squared distance in the case of the SE
        // kernels.
-       weight = w_point(first_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+
+       weight = first_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
+	 * second_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
+       if (HACK_adj_offdiag) weight *= 2;
+
+       //       weight = w_point(first_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+       //             * w_point(second_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+
      }
      ws += weight * n.unweighted_sums[v_select];
 
@@ -201,12 +257,17 @@ double gt(void) {
    }
    if (n.n_extra_p > 0) {
      double * epvals = n.extra_p_vals[v_select];
-     // printf("computing exact sum of %d additional pts\n", n.n_extra_p);
+     //printf("computing exact sum of %d additional pts\n", n.n_extra_p);
 
      double exact_sum = 0;
      for (unsigned int i=0; i < n.n_extra_p; ++i) {
-       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
-	 * w_point(second_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+       /*       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+	* w_point(second_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);*/
+
+       double weight = first_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
+	 * second_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
+       if (HACK_adj_offdiag) weight *= 2;
+
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
 
@@ -228,11 +289,15 @@ double gt(void) {
 
    bool query_in_bounds = (d <= n.max_dist);
    bool cutoff = false;
+   double min_weight, max_weight, threshold;
+   min_weight = -999;
+   max_weight = -999;
+   threshold = -999;
    if (!query_in_bounds) {
-     double min_weight = w_lower(d + n.max_dist, wp_pair);
-     double max_weight = w_upper(max(0.0, d - n.max_dist), wp_pair);
+     min_weight = w_lower(d + n.max_dist, wp_pair);
+     max_weight = w_upper(max(0.0, d - n.max_dist), wp_pair);
      //
-     double threshold, frac_remaining_terms, abserr_n;
+     double frac_remaining_terms, abserr_n;
      switch (cutoff_rule) {
      case 0:
        threshold = 2 * eps_rel * (weight_sofar + n.num_leaves * min_weight);
@@ -252,7 +317,7 @@ double gt(void) {
      case 2:
        frac_remaining_terms = n.num_leaves / (double)(max_terms - terms_sofar);
        threshold = frac_remaining_terms * (eps_abs - abserr_sofar);
-       abserr_n = (max_weight - min_weight) * n.unweighted_sums_abs[v_select]/2.0;
+       abserr_n = .5 * (max_weight - min_weight) * n.unweighted_sums_abs[v_select];
        cutoff = abserr_n < threshold;
        if (cutoff) {
 	 ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
@@ -273,7 +338,7 @@ double gt(void) {
    if (!cutoff) {
      // if not cutting off, we expand the sum recursively at the
      // children of this node, from nearest to furthest.
-     //printf("NO CUTOFF AT idx (%d, %d) pt1 (%.4f, %.4f) pt2 (%.4f, %.4f) Kinv=%.4f Kinv_abs=%.4f dist %.4f (approx %d children min %.4f max %.4f cutoff %f thresh %f), recursing to ", n.p.idx1, n.p.idx2, n.p.pt1[0], n.p.pt1[1], n.p.pt2[0], n.p.pt2[1], n.unweighted_sums[v_select], n.unweighted_sums_abs[v_select], d, n.num_leaves, min_weight, max_weight, max_weight * n.unweighted_sums_abs[v_select], threshold);
+     //printf("NO CUTOFF AT idx (%d, %d) pt1 (%.4f, %.4f) pt2 (%.4f, %.4f) Kinv=%.4f Kinv_abs=%.4f dist %.4f (approx %d children min %.4f max %.4f cutoff %f thresh %f), recursing to \n", n.p.idx1, n.p.idx2, n.p.pt1[0], n.p.pt1[1], n.p.pt2[0], n.p.pt2[1], n.unweighted_sums[v_select], n.unweighted_sums_abs[v_select], d, n.num_leaves, min_weight, max_weight, max_weight * n.unweighted_sums_abs[v_select], threshold);
 
      int small_perm[10];
      int * permutation = (int *)&small_perm;
@@ -298,7 +363,7 @@ double gt(void) {
 			   weight_sofar, terms_sofar, abserr_sofar,
 			   ws, max_terms, fcalls,
 			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra);
+			   dist, dist_params, dist_extra, HACK_adj_offdiag);
        }
      } else {
        for(int i=0; i < n.num_children; ++i) {
@@ -307,7 +372,7 @@ double gt(void) {
 			   weight_sofar, terms_sofar, abserr_sofar,
 			   ws, max_terms, fcalls,
 			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra);
+			   dist, dist_params, dist_extra, HACK_adj_offdiag);
        }
      }
      if (permutation != (int *)&small_perm) {
@@ -433,16 +498,16 @@ void collect_leaves(node<pairpoint> & n) {
 }
 
 
-void cutoff_leaves(node<pairpoint> &root, unsigned int leaf_bin_size ) {
+void cutoff_leaves(node<pairpoint> &root, double leaf_bin_width ) {
 
-  if ((root.num_leaves == root.num_children) || (root.num_leaves <= leaf_bin_size)) {
+  if ((root.num_leaves == root.num_children) || (root.max_dist <= leaf_bin_width)) {
     collect_leaves(root);
     //root.free_tree_recursive();
     root.num_children = 0;
     root.children = NULL; // warning: GIANT MEMORY LEAK
   } else {
     for (unsigned int i=0; i < root.num_children; ++i) {
-      cutoff_leaves(root.children[i], leaf_bin_size);
+      cutoff_leaves(root.children[i], leaf_bin_width);
     }
   }
 
@@ -464,6 +529,18 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    }
    p->hits = 0;
    p->misses = 0;
+
+
+   p->query1_w_cache = new dense_hash_map<int, double>((int) (10 * log(this->n)));
+   p->query1_w_cache->set_empty_key(-1);
+   if (symmetric) {
+     p->query2_w_cache = p->query1_w_cache;
+   } else {
+     p->query2_w_cache = new dense_hash_map<int, double>((int) (10 * log(this->n)));
+     p->query2_w_cache->set_empty_key(-1);
+   }
+   p->w_hits = 0;
+   p->w_misses = 0;
 
    // assume there will be at least one point within three or so lengthscales,
    // so we can cut off any branch with really neligible weight.
@@ -488,11 +565,11 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 			   this->w_lower, this->w_point,
 			   this->wp_pair, this->wp_point,
 			   this->factored_query_dist,
-			   this->dist_params, this->dfn_extra);
+		      this->dist_params, this->dfn_extra, false);
 
     if (this->use_offdiag) {
-      this->wp_pair[0] *= 2;
-      this->wp_point[0] *= sqrt(2.0);
+      //this->wp_pair[0] *= 2;
+      //this->wp_point[0] *= sqrt(2.0);
       weighted_sum_node(this->root_offdiag, 0,
 			qp, eps_rel, eps_abs, cutoff_rule,
 			weight_sofar, terms_sofar, abserr_sofar,
@@ -501,9 +578,9 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 			this->w_lower, this->w_point,
 			this->wp_pair, this->wp_point,
 			this->factored_query_dist,
-			this->dist_params, this->dfn_extra);
-      this->wp_pair[0] /= 2;
-      this->wp_point[0] /= sqrt(2.0);
+			this->dist_params, this->dfn_extra, true);
+      //this->wp_pair[0] /= 2;
+      //this->wp_point[0] /= sqrt(2.0);
     }
    } else{
      int max_terms = this->nzero;
@@ -516,7 +593,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
      }
 
      weighted_sum_node(this->root_diag, 0,
@@ -527,7 +604,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
 
      if (this->use_offdiag) {
      pairpoint qp2 = {&query_pt2(0,0), &query_pt1(0,0), 0, 0};
@@ -539,7 +616,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
      }
    }
 
@@ -550,8 +627,10 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    //printf("quadratic form did %.0lf distance calculations for %d fcalls\n", ((double *)(this->distance_cache))[0], this->fcalls);
 
    delete p->query1_cache;
+   delete p->query1_w_cache;
    if (!symmetric) {
      delete p->query2_cache;
+     delete p->query2_w_cache;
    }
 
    return ws;
@@ -584,10 +663,10 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    }
  }
 
-void MatrixTree::collapse_leaf_bins(unsigned int leaf_bin_size) {
-  cutoff_leaves(this->root_diag, leaf_bin_size);
+void MatrixTree::collapse_leaf_bins(double leaf_bin_width) {
+  cutoff_leaves(this->root_diag, leaf_bin_width);
   if (this->use_offdiag) {
-    cutoff_leaves(this->root_offdiag, leaf_bin_size);
+    cutoff_leaves(this->root_offdiag, leaf_bin_width);
   }
 }
 

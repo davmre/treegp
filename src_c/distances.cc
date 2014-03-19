@@ -366,7 +366,8 @@ double w_compact_q2(double r, const double * extra) {
 
   double poly = ((j*j + 4*j + 3)*r*r + (3*j + 6)*r + 3)/3.0;
   return variance * pow(d, j+2)*poly;
-}
+  }
+
 
 double deriv_compact_q2_wrt_r(double r, double dr_dtheta, const double *extra) {
   double d = 1.0 - r;
