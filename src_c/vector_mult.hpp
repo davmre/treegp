@@ -156,7 +156,6 @@ struct pair_dfn_extra {
   int misses;
   int w_hits;
   int w_misses;
-
 };
 
 class MatrixTree {

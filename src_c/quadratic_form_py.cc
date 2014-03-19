@@ -68,9 +68,16 @@ double first_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doubl
      d1 = first_half_d_query_cached(p1, p2, BOUND_IGNORED, params, p);
      w = w_point(d1, wp_point);
      query_cache[p2.idx1] = w;
+
+     //printf ("set first half %d to w %f for d %f\n", p2.idx1, w, d1);
+
      p->w_misses += 1;
    } else {
+
      w = query_cache[p2.idx1];
+
+     ///printf ("cache hit on first half idx %d! retrieved %f vs true value %f for d %f\n", p2.idx1, w, w1, d1);
+
      p->w_hits += 1;
    }
 
@@ -88,7 +95,12 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
      query_cache[p2.idx2] = w;
      p->w_misses += 1;
    } else {
+
      w = query_cache[p2.idx2];
+
+     // printf ("cache hit on second half %d! retrieved %f vs true value %f for d %f\n", p2.idx2, w, w2, d2);
+
+
      p->w_hits += 1;
    }
 
@@ -194,7 +206,8 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 			const double* wp_point,
 			distfn<pairpoint>::Type dist,
 			const double * dist_params,
-			pair_dfn_extra * dist_extra) {
+			pair_dfn_extra * dist_extra,
+			bool HACK_adj_offdiag) {
    double d = n.distance_to_query; // avoid duplicate distance
 				     // calculations by assuming this
 				     // distance has already been
@@ -216,8 +229,14 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        // w_point takes an *intermediate* representation of the
        // distance, e.g. squared distance in the case of the SE
        // kernels.
+
        weight = first_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
 	 * second_half_w_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
+       if (HACK_adj_offdiag) weight *= 2;
+
+       //       weight = w_point(first_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+       //             * w_point(second_half_d_query_cached(query_pt, n.p, std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);
+
      }
      ws += weight * n.unweighted_sums[v_select];
 
@@ -242,8 +261,13 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
      double exact_sum = 0;
      for (unsigned int i=0; i < n.n_extra_p; ++i) {
+       /*       double weight = w_point(first_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point)
+	* w_point(second_half_d_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra), wp_point);*/
+
        double weight = first_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
 	 * second_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
+       if (HACK_adj_offdiag) weight *= 2;
+
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
 
@@ -339,7 +363,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 			   weight_sofar, terms_sofar, abserr_sofar,
 			   ws, max_terms, fcalls,
 			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra);
+			   dist, dist_params, dist_extra, HACK_adj_offdiag);
        }
      } else {
        for(int i=0; i < n.num_children; ++i) {
@@ -348,7 +372,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 			   weight_sofar, terms_sofar, abserr_sofar,
 			   ws, max_terms, fcalls,
 			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra);
+			   dist, dist_params, dist_extra, HACK_adj_offdiag);
        }
      }
      if (permutation != (int *)&small_perm) {
@@ -518,7 +542,6 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    p->w_hits = 0;
    p->w_misses = 0;
 
-
    // assume there will be at least one point within three or so lengthscales,
    // so we can cut off any branch with really neligible weight.
    double weight_sofar = 0;
@@ -542,11 +565,11 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 			   this->w_lower, this->w_point,
 			   this->wp_pair, this->wp_point,
 			   this->factored_query_dist,
-			   this->dist_params, this->dfn_extra);
+		      this->dist_params, this->dfn_extra, false);
 
     if (this->use_offdiag) {
-      this->wp_pair[0] *= 2;
-      this->wp_point[0] *= sqrt(2.0);
+      //this->wp_pair[0] *= 2;
+      //this->wp_point[0] *= sqrt(2.0);
       weighted_sum_node(this->root_offdiag, 0,
 			qp, eps_rel, eps_abs, cutoff_rule,
 			weight_sofar, terms_sofar, abserr_sofar,
@@ -555,9 +578,9 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 			this->w_lower, this->w_point,
 			this->wp_pair, this->wp_point,
 			this->factored_query_dist,
-			this->dist_params, this->dfn_extra);
-      this->wp_pair[0] /= 2;
-      this->wp_point[0] /= sqrt(2.0);
+			this->dist_params, this->dfn_extra, true);
+      //this->wp_pair[0] /= 2;
+      //this->wp_point[0] /= sqrt(2.0);
     }
    } else{
      int max_terms = this->nzero;
@@ -570,7 +593,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
      }
 
      weighted_sum_node(this->root_diag, 0,
@@ -581,7 +604,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
 
      if (this->use_offdiag) {
      pairpoint qp2 = {&query_pt2(0,0), &query_pt1(0,0), 0, 0};
@@ -593,7 +616,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
-		       this->dist_params, this->dfn_extra);
+		       this->dist_params, this->dfn_extra, false);
      }
    }
 
