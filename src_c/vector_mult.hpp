@@ -189,7 +189,7 @@ public:
 		    const pyublas::numpy_strided_vector<double> &nonzero_vals);
 
   pyublas::numpy_matrix<double> get_m();
-  void collapse_leaf_bins(unsigned int leaf_bin_size);
+  void collapse_leaf_bins(double leaf_bin_width);
 
   double quadratic_form(const pyublas::numpy_matrix<double> &query_pt1,
 			const pyublas::numpy_matrix<double> &query_pt2,

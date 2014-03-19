@@ -392,15 +392,15 @@ class GP(object):
                  build_tree=False,
                  sparse_invert=True,
                  center_mean=False,
-                 leaf_bin_size = 0): # WARNING: bin sizes > 0 currently lead to memory leaks
+                 leaf_bin_width = 0): # WARNING: bin sizes > 0 currently lead to memory leaks
 
 
         self.double_tree = None
         if fname is not None:
-            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_size=leaf_bin_size)
+            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width)
         else:
             if sort_events:
-                X, y = self.sort_morton(X, y) # arrange events by
+                X, y = sort_morton(X, y) # arrange events by
                                               # lon/lat, as a
                                               # heuristic to expose
                                               # block structure in the
@@ -488,7 +488,7 @@ class GP(object):
                 HH = None
 
             if build_tree:
-                self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_size=leaf_bin_size)
+                self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width)
 
             # precompute training set log likelihood, so we don't need
             # to keep L around.
@@ -516,7 +516,7 @@ class GP(object):
             predict_tree_fic = None
         return predict_tree, predict_tree_fic
 
-    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_size):
+    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_width):
         if self.n == 0: return
 
         fullness = len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2)
@@ -537,8 +537,8 @@ class GP(object):
         vals = np.reshape(np.asarray(Kinv[nzr, nzc]), (-1,))
         self.double_tree = MatrixTree(self.X, nzr, nzc, *self.cov_main.tree_params())
         self.double_tree.set_m_sparse(nzr, nzc, vals)
-        if leaf_bin_size > 1:
-            self.double_tree.collapse_leaf_bins(leaf_bin_size)
+        if leaf_bin_width > 0:
+            self.double_tree.collapse_leaf_bins(leaf_bin_width)
 
     def predict(self, cond, parametric_only=False, eps=1e-8):
         if not self.double_tree: return self.predict_naive(cond, parametric_only)
@@ -692,6 +692,7 @@ class GP(object):
         if self.predict_tree_fic is not None:
             gp_cov += np.diag(self.covariance_diag_correction(X1))
 
+
         return gp_cov
 
     def covariance_spkernel_solve(self, cond, include_obs=False, parametric_only=False, pad=1e-8):
@@ -779,18 +780,16 @@ class GP(object):
         if self.predict_tree_fic is not None:
             gp_cov += np.diag(self.covariance_diag_correction(X1))
 
+
         return gp_cov
 
-    def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=1e-8, eps_abs=1e-4, cutoff_rule=1, qf_only=False):
+    def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=-1, eps_abs=1e-4, cutoff_rule=1, qf_only=False):
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
         cutoff_rule = int(cutoff_rule)
 
         if not parametric_only:
             gp_cov = self.kernel(X1, X1, identical=include_obs)
-
-            if cutoff_rule == 2:
-                eps_abs = float(eps * gp_cov)
 
             t1 = time.time()
             if self.n > 0:
@@ -815,7 +814,7 @@ class GP(object):
 
             for i in range(self.n_features):
                 for j in range(m):
-                    HKinvKstar[i,j] = self.cov_tree.weighted_sum(i, X1[j:j+1,:], eps)
+                    HKinvKstar[i,j] = self.cov_tree.weighted_sum(i, X1[j:j+1,:], eps_abs)
             R = H - HKinvKstar
             v = np.dot(self.invc, R)
             mc = np.dot(v.T, v)
@@ -1001,7 +1000,7 @@ class GP(object):
         else:
             self.HKinv = None
 
-    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_size=0):
+    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0):
         npzfile = np.load(filename)
         self.unpack_npz(npzfile)
         del npzfile.f
@@ -1012,7 +1011,7 @@ class GP(object):
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
         if build_tree:
             #self.factor = scikits.sparse.cholmod.cholesky(self.K)
-            self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_size=leaf_bin_size)
+            self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width)
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 

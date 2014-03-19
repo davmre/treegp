@@ -201,7 +201,7 @@ double gt(void) {
    }
    if (n.n_extra_p > 0) {
      double * epvals = n.extra_p_vals[v_select];
-     // printf("computing exact sum of %d additional pts\n", n.n_extra_p);
+     //printf("computing exact sum of %d additional pts\n", n.n_extra_p);
 
      double exact_sum = 0;
      for (unsigned int i=0; i < n.n_extra_p; ++i) {
@@ -228,11 +228,15 @@ double gt(void) {
 
    bool query_in_bounds = (d <= n.max_dist);
    bool cutoff = false;
+   double min_weight, max_weight, threshold;
+   min_weight = -999;
+   max_weight = -999;
+   threshold = -999;
    if (!query_in_bounds) {
-     double min_weight = w_lower(d + n.max_dist, wp_pair);
-     double max_weight = w_upper(max(0.0, d - n.max_dist), wp_pair);
+     min_weight = w_lower(d + n.max_dist, wp_pair);
+     max_weight = w_upper(max(0.0, d - n.max_dist), wp_pair);
      //
-     double threshold, frac_remaining_terms, abserr_n;
+     double frac_remaining_terms, abserr_n;
      switch (cutoff_rule) {
      case 0:
        threshold = 2 * eps_rel * (weight_sofar + n.num_leaves * min_weight);
@@ -273,7 +277,7 @@ double gt(void) {
    if (!cutoff) {
      // if not cutting off, we expand the sum recursively at the
      // children of this node, from nearest to furthest.
-     //printf("NO CUTOFF AT idx (%d, %d) pt1 (%.4f, %.4f) pt2 (%.4f, %.4f) Kinv=%.4f Kinv_abs=%.4f dist %.4f (approx %d children min %.4f max %.4f cutoff %f thresh %f), recursing to ", n.p.idx1, n.p.idx2, n.p.pt1[0], n.p.pt1[1], n.p.pt2[0], n.p.pt2[1], n.unweighted_sums[v_select], n.unweighted_sums_abs[v_select], d, n.num_leaves, min_weight, max_weight, max_weight * n.unweighted_sums_abs[v_select], threshold);
+     //printf("NO CUTOFF AT idx (%d, %d) pt1 (%.4f, %.4f) pt2 (%.4f, %.4f) Kinv=%.4f Kinv_abs=%.4f dist %.4f (approx %d children min %.4f max %.4f cutoff %f thresh %f), recursing to \n", n.p.idx1, n.p.idx2, n.p.pt1[0], n.p.pt1[1], n.p.pt2[0], n.p.pt2[1], n.unweighted_sums[v_select], n.unweighted_sums_abs[v_select], d, n.num_leaves, min_weight, max_weight, max_weight * n.unweighted_sums_abs[v_select], threshold);
 
      int small_perm[10];
      int * permutation = (int *)&small_perm;
@@ -433,16 +437,16 @@ void collect_leaves(node<pairpoint> & n) {
 }
 
 
-void cutoff_leaves(node<pairpoint> &root, unsigned int leaf_bin_size ) {
+void cutoff_leaves(node<pairpoint> &root, double leaf_bin_width ) {
 
-  if ((root.num_leaves == root.num_children) || (root.num_leaves <= leaf_bin_size)) {
+  if ((root.num_leaves == root.num_children) || (root.max_dist <= leaf_bin_width)) {
     collect_leaves(root);
     //root.free_tree_recursive();
     root.num_children = 0;
     root.children = NULL; // warning: GIANT MEMORY LEAK
   } else {
     for (unsigned int i=0; i < root.num_children; ++i) {
-      cutoff_leaves(root.children[i], leaf_bin_size);
+      cutoff_leaves(root.children[i], leaf_bin_width);
     }
   }
 
@@ -584,10 +588,10 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    }
  }
 
-void MatrixTree::collapse_leaf_bins(unsigned int leaf_bin_size) {
-  cutoff_leaves(this->root_diag, leaf_bin_size);
+void MatrixTree::collapse_leaf_bins(double leaf_bin_width) {
+  cutoff_leaves(this->root_diag, leaf_bin_width);
   if (this->use_offdiag) {
-    cutoff_leaves(this->root_offdiag, leaf_bin_size);
+    cutoff_leaves(this->root_offdiag, leaf_bin_width);
   }
 }
 
