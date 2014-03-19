@@ -317,7 +317,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
      case 2:
        frac_remaining_terms = n.num_leaves / (double)(max_terms - terms_sofar);
        threshold = frac_remaining_terms * (eps_abs - abserr_sofar);
-       abserr_n = (max_weight - min_weight) * n.unweighted_sums_abs[v_select]/2.0;
+       abserr_n = .5 * (max_weight - min_weight) * n.unweighted_sums_abs[v_select];
        cutoff = abserr_n < threshold;
        if (cutoff) {
 	 ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
