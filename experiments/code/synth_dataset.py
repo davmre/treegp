@@ -140,7 +140,8 @@ def build_highd_benchmark():
 if __name__ == "__main__":
     Ns = (8000, 16000, 24000, 32000, 48000, 64000, 80000, 96000, 128000)
 
-    vs = (1.0, 5.0, 10.0)
+    #vs = (1.0, 5.0, 10.0)
+    vs = (20.0,)
 
     #build_lscale_benchmark()
     #run_lscale_benchmark()
