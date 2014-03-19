@@ -17,15 +17,18 @@ using namespace std;
 namespace bp = boost::python;
 
 double weighted_sum_node(node<point> &n, int v_select,
-			 const point &query_pt, double eps,
-			 double &weight_sofar,
+			 const point &query_pt, double eps_abs,
+			 int &terms_sofar,
+			 double &abserr_sofar,
+			 double &ws,
+			 int max_terms,
 			 int &fcalls,
 			 wfn w,
 			 distfn<point>::Type dist,
 			 const double * dist_params,
 			 void * dist_extra,
 			 const double* weight_params) {
-  double ws = 0;
+
   double d = n.distance_to_query; // avoid duplicate distance
 				    // calculations by assuming this
 				    // distance has already been
@@ -44,9 +47,7 @@ double weighted_sum_node(node<point> &n, int v_select,
     // if we're at a leaf, just do the multiplication
 
     double weight = w(d, weight_params);
-    ws = weight * n.unweighted_sums[v_select];
-    weight_sofar += weight;
-
+    ws += weight * n.unweighted_sums[v_select];
     //printf("at leaf: ws = %lf*%lf = %lf\n", weight, n.unweighted_sums[v_select], ws);
     cutoff = true;
   } else {
@@ -54,15 +55,28 @@ double weighted_sum_node(node<point> &n, int v_select,
     if (!query_in_bounds) {
       double min_weight = w(d + n.max_dist, weight_params);
       double max_weight = w(max(0.0, d - n.max_dist), weight_params);
-      double cutoff_threshold = 2 * eps * (weight_sofar + n.num_leaves * min_weight);
-      cutoff = n.num_leaves * (max_weight - min_weight) <= cutoff_threshold;
+
+      double frac_remaining_terms = n.num_leaves / (double)(max_terms - terms_sofar);
+      double threshold = frac_remaining_terms * (eps_abs - abserr_sofar);
+      double abserr_n = .5 * (max_weight - min_weight) * n.unweighted_sums_abs[v_select];
+
+      cutoff = abserr_n < threshold;
       if (cutoff) {
 	// if we're cutting off, just compute an estimate of the sum
 	// in this region
-	ws = .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
+	ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
 	//printf("cutting off: ws = %lf*%lf = %lf\n", .5 * (max_weight + min_weight), n.unweighted_sums[v_select], ws);
-	weight_sofar += min_weight * n.num_leaves;
+	//printf("cutting off: %d leaves (representing %.1f%% of %d-%d remaining), error bound %.8f, error budget %.4f - %.4f = %.4f, so we would have been allowed %.6f\n", n.num_leaves, frac_remaining_terms*100, max_terms, terms_sofar, abserr_n, eps_abs, abserr_sofar, eps_abs - abserr_sofar, threshold);
+
+	 terms_sofar += n.num_leaves;
+	 abserr_sofar += abserr_n;
+      } else{
+
+	//printf("NOT cutting off: %d leaves (representing %.1f%% of %d-%d remaining), error bound %.8f, error budget %.4f - %.4f = %.4f, so we would have been allowed %.6f\n", n.num_leaves, frac_remaining_terms*100, max_terms, terms_sofar, abserr_n, eps_abs, abserr_sofar, eps_abs - abserr_sofar, threshold);
       }
+
+
+
     }
     if (!cutoff) {
       // if not cutting off, we expand the sum recursively at the
@@ -80,9 +94,9 @@ double weighted_sum_node(node<point> &n, int v_select,
       }
       halfsort(permutation, n.num_children, n.children);
       for(int i=0; i < n.num_children; ++i) {
-	ws +=weighted_sum_node(n.children[permutation[i]], v_select,
-			       query_pt, eps, weight_sofar, fcalls,
-			       w, dist, dist_params, dist_extra, weight_params);
+	weighted_sum_node(n.children[permutation[i]], v_select,
+			  query_pt, eps_abs, terms_sofar, abserr_sofar, ws, max_terms, fcalls,
+			  w, dist, dist_params, dist_extra, weight_params);
       }
       if (permutation != (int *)&small_perm) {
 	free(permutation);
@@ -97,11 +111,14 @@ double weighted_sum_node(node<point> &n, int v_select,
 void set_v_node (node<point> &n, int v_select, const std::vector<double> &v) {
   if (n.num_children == 0) {
     n.unweighted_sums[v_select] = v[n.p.idx];
+    n.unweighted_sums_abs[v_select] = fabs(v[n.p.idx]);
   } else {
     n.unweighted_sums[v_select] = 0;
+    n.unweighted_sums_abs[v_select] = 0;
     for(int i=0; i < n.num_children; ++i) {
       set_v_node(n.children[i], v_select, v);
       n.unweighted_sums[v_select] += n.children[i].unweighted_sums[v_select];
+      n.unweighted_sums_abs[v_select] += n.children[i].unweighted_sums_abs[v_select];
     }
   }
 }
@@ -126,13 +143,19 @@ double VectorTree::weighted_sum(int v_select, const pyublas::numpy_matrix<double
     return 0;
   }
 
+  double ws = 0;
+  int terms_sofar = 0;
+  double abserr_sofar = 0;
+  int max_terms = this->root.num_leaves;
 
   this->root.distance_to_query = this->dfn(qp, this->root.p, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
-  double ws = weighted_sum_node(this->root, v_select,
-				qp, eps, weight_sofar,
-				fcalls, this->w,
-				this->dfn, this->dist_params,
-				this->dfn_extra, this->wp);
+  weighted_sum_node(this->root, v_select,
+		    qp, eps, terms_sofar,
+		    abserr_sofar, ws,
+		    max_terms,
+		    fcalls, this->w,
+		    this->dfn, this->dist_params,
+		    this->dfn_extra, this->wp);
 
   this->fcalls = fcalls;
   return ws;
