@@ -27,7 +27,7 @@ def stats(v):
 def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, burnin=10, cutoff_rule=2):
 
     X_test, y_test = test_data(dataset_name)
-    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.0)
+    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5)
 
     if test_n is None:
         test_n = len(X_test)
@@ -230,8 +230,8 @@ def main():
     else:
         tag = None
 
-    #profile_tree(dataset_name, model_name, tag=tag, test_n=4000)
-    eval_gp(dataset_name, model_name, test_n=100, tag=tag)
+    #profile_tree(dataset_name, model_name, tag=tag, test_n=700)
+    eval_gp(dataset_name, model_name, test_n=500, tag=tag)
 
     #print "timings finished"
 
