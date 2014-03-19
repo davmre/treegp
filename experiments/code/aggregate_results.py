@@ -34,6 +34,7 @@ with open(model_list_fname, 'r') as f:
     model_lines = f.readlines()
 
 print_timings = False
+print_fullness = True
 
 for line in model_lines:
     dataset, model, tag = line.strip().split()
@@ -49,19 +50,21 @@ for line in model_lines:
         except IOError:
             continue
         sparse, hybrid, tree = parse_timings(timings_lines)
-        print dataset, model, sparse['mean']*1000, hybrid['mean']*1000, tree['mean']*1000
+        print dataset, model, sparse['mean']*1000, sparse['std']*1000, hybrid['mean']*1000, hybrid['std']* 1000, tree['mean']*1000, tree['std']*1000
     else:
         with open(accuracy_fname, 'r') as f:
             acc_lines = f.readlines()
         msll = float(acc_lines[0].split()[1])
         smse = float(acc_lines[1].split()[1])
 
-        sgp = GP(fname=trained_fname, build_tree=False)
-
-        if scipy.sparse.issparse(sgp.Kinv):
-            fullness = float(len(sgp.Kinv.nonzero()[0])) / sgp.Kinv.shape[0]**2
+        if print_fullness:
+            sgp = GP(fname=trained_fname, build_tree=False)
+            if scipy.sparse.issparse(sgp.Kinv):
+                fullness = float(len(sgp.Kinv.nonzero()[0])) / sgp.Kinv.shape[0]**2
+            else:
+                fullness = float(np.sum(np.abs(sgp.Kinv) > sgp.sparse_threshold))  / sgp.Kinv.shape[0]**2
+            fullness *= 100.0
         else:
-            fullness = float(np.sum(np.abs(sgp.Kinv) > sgp.sparse_threshold))  / sgp.Kinv.shape[0]**2
-        fullness *= 100.0
+            fullness = -1
 
         print dataset, model, fullness, msll, smse
