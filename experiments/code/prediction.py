@@ -3,8 +3,8 @@ import sys
 import numpy as np
 import scipy.io
 
-from sparsegp.gp import GP
-from sparsegp.distributions import Gaussian
+from treegp.gp import GP
+from treegp.distributions import Gaussian
 
 from datasets import *
 

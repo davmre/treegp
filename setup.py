@@ -17,11 +17,10 @@ else:
 print sys_includes
 print sys_libraries
 
-#extra_compile_args = ['-g', '-O0']
+#extra_compile_args = ['-g', '-pg']
 extra_compile_args = ['-O3']
 
 # extra_compile_args += [ '--stdlib=libc++'] # uncomment this for OSX/clang
-
 
 #extra_link_args = ['-Wl,--strip-all']
 #extra_link_args = ['-lrt',]
@@ -42,12 +41,12 @@ covertree_module = ctree = Extension('cover_tree',
                                      extra_link_args = extra_link_args,
                                  )
 setup(
-    name='sparsegp',
+    name='treegp',
     version='0.1.0',
     author='Dave Moore',
     author_email='dmoore@cs.berkeley.edu',
-    packages=['sparsegp'],
-    url='https://github.com/davmre/sparsegp',
+    packages=['treegp'],
+    url='https://github.com/davmre/treegp',
     license='LICENSE',
     description='Gaussian Process Regression toolkit for Python/Numpy',
     long_description=open('README').read(),

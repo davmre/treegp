@@ -1,4 +1,4 @@
-from sparsegp.gp import GPCov
+from treegp.gp import GPCov
 import sys
 import os
 import cPickle as pickle
@@ -28,7 +28,7 @@ if os.path.exists('dfn_params_fic.txt'):
 
 
     if len(sys.argv) > 1:
-        outfile = os.path.join("/home/dmoore/python/sparsegp/experiments/models/%s/csfic%d/" % (sys.argv[1],Xu.shape[0]), outfile)
+        outfile = os.path.join("/home/dmoore/python/treegp/experiments/models/%s/csfic%d/" % (sys.argv[1],Xu.shape[0]), outfile)
 
     with open(outfile, 'w') as f:
         pickle.dump(hparams, f)
@@ -48,7 +48,7 @@ else:
     hparams['noise_var']=noise_var
 
     if len(sys.argv) > 1:
-        outfile = os.path.join("/home/dmoore/python/sparsegp/experiments/models/%s/se/" % sys.argv[1], outfile)
+        outfile = os.path.join("/home/dmoore/python/treegp/experiments/models/%s/se/" % sys.argv[1], outfile)
 
     with open(outfile, 'w') as f:
         pickle.dump(hparams, f)

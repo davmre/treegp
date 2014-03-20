@@ -1,7 +1,7 @@
 import numpy as np
 import re
-from sparsegp.experiments.code.datasets import predict_results_fname, timing_results_fname, gp_fname
-from sparsegp.gp import GP
+from treegp.experiments.code.datasets import predict_results_fname, timing_results_fname, gp_fname
+from treegp.gp import GP
 import scipy.sparse
 model_list_fname = "models"
 

@@ -1,11 +1,23 @@
-This is very much a work in progress.
+This is very preliminary documentation, will be improved in a final release.
 
-See test.py for unit tests and usage examples.
+To install: set up a Python virtualenv with the packages specified in requirements.txt.
 
-Features:
-	- GP training, prediction, sampling, and likelihood evaluation
-	- Saving and loading trained models to/from a file
-	- Common kernels included, easily extendable to arbitrary kernels
-	- Maximum-likelihood hyperparameter optimization
-	- Common kernel hyperparam prior distributions including gamma, inverse gamma, lognormal, and of course these are extensible.
-	- k-fold cross-validation with multiple loss functions.
+To compile the C++ components (requires boost_python): python setup.py build_ext --inplace
+
+To test: python test/test_sgp.py
+
+To train hyperparameters on a subset of 5000 training points, for a model with 20 inducing points learned during the optimization:
+python experiments/code/train_hyperparams.py seismic_tt_ASAR --n-hyper=5000 -f 20 --optimize-xu
+
+To train hyperparameters for an SE model on a subset of 5000 training points:
+python experiments/code/train_hyperparams.py seismic_tt_ASAR --n-hyper=5000 --se
+
+(details of initial values, priors, and so on are hard-coded in train_hyperparams.py)
+
+The trained hyperparameters are saved to experiments/models/<dataset_name>/<model_type>/hyperparams_5000.pkl.
+
+Given learned hyperparameters, to train a model and compute predictive performance:
+python experiments/code/prediction.py seismic_tt_ASAR csfic20 5000
+
+To measure runtimes for posterior variances:
+python experiments/code/timing.py seismic_tt_ASAR csfic20 5000

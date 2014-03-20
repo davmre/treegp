@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.sparse
 import pyublas
-from sparsegp.cover_tree import VectorTree, MatrixTree
+from treegp.cover_tree import VectorTree, MatrixTree
 
 
 dfn_str = "euclidean"

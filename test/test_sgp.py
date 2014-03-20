@@ -1,10 +1,10 @@
 import numpy as np
 import unittest
 
-from sparsegp.gp import GP, GPCov, optimize_gp_hyperparams
-from sparsegp.features import featurizer_from_string
+from treegp.gp import GP, GPCov, optimize_gp_hyperparams
+from treegp.features import featurizer_from_string
 
-from sparsegp.cover_tree import VectorTree
+from treegp.cover_tree import VectorTree
 import pyublas
 
 class TestCTree(unittest.TestCase):

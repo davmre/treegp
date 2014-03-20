@@ -8,8 +8,8 @@ import time
 from scikits.sparse.cholmod import cholesky as sp_cholesky
 import scipy.sparse
 
-from sparsegp.gp import GP, GPCov, prior_sample, sort_morton
-from sparsegp.experiments.code.datasets import save_hparams, get_data_dir
+from treegp.gp import GP, GPCov, prior_sample, sort_morton
+from treegp.experiments.code.datasets import save_hparams, get_data_dir
 
 basedir = "experiments/datasets/"
 #lscales = (0.00005, 0.0005, 0.005, 0.01, 0.02)

@@ -30,7 +30,7 @@ def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=No
     gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5)
 
     if test_n is None:
-        test_n = len(X_test)
+        test_n = min(len(X_test), 5000)
     print "loaded GP, evaluating timings on %d test points..." % test_n
 
     eps_abs = 0.001 * gp.noise_var
@@ -67,13 +67,17 @@ def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=No
 def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, burnin=10, cutoff_rule=2):
     X_test, y_test = test_data(dataset_name)
     gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5)
+    if test_n is None:
+        test_n = min(len(X_test), 5000)
+
+
     print "loaded GP, evaluating timings on %d test points..." % test_n
 
     resultfile = timing_results_fname(dataset_name, model_name, tag)
     errorfile = timing_errors_fname(dataset_name, model_name, tag)
 
-    if test_n is None:
-        test_n = len(X_test)
+
+
 
     naive_predict = np.zeros(test_n)
     naive_predict_times = np.zeros(test_n)
@@ -231,7 +235,7 @@ def main():
         tag = None
 
     #profile_tree(dataset_name, model_name, tag=tag, test_n=700)
-    eval_gp(dataset_name, model_name, test_n=500, tag=tag)
+    eval_gp(dataset_name, model_name, tag=tag)
 
     #print "timings finished"
 

@@ -6,8 +6,8 @@ import argh
 from collections import defaultdict
 import cPickle as pickle
 
-from sparsegp.distributions import LogUniform, LogNormal, InvGamma
-from sparsegp.gp import GP, GPCov, optimize_gp_hyperparams
+from treegp.distributions import LogUniform, LogNormal, InvGamma
+from treegp.gp import GP, GPCov, optimize_gp_hyperparams
 
 from datasets import *
 

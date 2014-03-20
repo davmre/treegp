@@ -1510,11 +1510,11 @@ class GP(object):
         return self.ll
 
 
-def sparsegp_nll_ngrad(**kwargs):
-    ll, grad = sparsegp_ll_grad(**kwargs)
+def treegp_nll_ngrad(**kwargs):
+    ll, grad = treegp_ll_grad(**kwargs)
     return -ll, (-grad if grad is not None else np.zeros((len(kwargs['hyperparams']),)))
 
-def sparsegp_ll_grad(priors=None, **kwargs):
+def treegp_ll_grad(priors=None, **kwargs):
 
     """
     Get both the log-likelihood and its gradient
