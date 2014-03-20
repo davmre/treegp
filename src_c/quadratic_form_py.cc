@@ -354,27 +354,15 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
      halfsort(permutation, n.num_children, n.children);
 
-     if (cutoff_rule == 2) {
-       // look at FURTHEST NODES first, so we can cut off lots of ndoes quickly, and then relax our error budget to be able to approximate when we get near the query point.
-       for(int i=0; i < n.num_children; ++i) {
-	 //for(int i=n.num_children-1; i>= 0; --i) {
-	 weighted_sum_node(n.children[permutation[i]], v_select,
-			   query_pt, eps_rel, eps_abs, cutoff_rule,
-			   weight_sofar, terms_sofar, abserr_sofar,
-			   ws, max_terms, fcalls,
-			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra, HACK_adj_offdiag);
-       }
-     } else {
-       for(int i=0; i < n.num_children; ++i) {
-	 weighted_sum_node(n.children[permutation[i]], v_select,
-			   query_pt, eps_rel, eps_abs, cutoff_rule,
-			   weight_sofar, terms_sofar, abserr_sofar,
-			   ws, max_terms, fcalls,
-			   w_upper, w_lower, w_point, wp_pair, wp_point,
-			   dist, dist_params, dist_extra, HACK_adj_offdiag);
-       }
+     for(int i=0; i < n.num_children; ++i) {
+       weighted_sum_node(n.children[permutation[i]], v_select,
+			 query_pt, eps_rel, eps_abs, cutoff_rule,
+			 weight_sofar, terms_sofar, abserr_sofar,
+			 ws, max_terms, fcalls,
+			 w_upper, w_lower, w_point, wp_pair, wp_point,
+			 dist, dist_params, dist_extra, HACK_adj_offdiag);
      }
+
      if (permutation != (int *)&small_perm) {
        free(permutation);
      }
