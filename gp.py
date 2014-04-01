@@ -429,7 +429,7 @@ class GP(object):
                 self.alpha_r = self.y
                 self.ll = np.float('-inf')
                 return
-
+            import pdb; pdb.set_trace()
             self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
             # compute sparse kernel matrix
@@ -481,7 +481,7 @@ class GP(object):
             else:
                 self.n_features = 0
                 self.HKinv = None
-                self.alpha_r = alpha
+                self.alpha_r = np.reshape(alpha, (-1,))
                 r = self.y
                 z = self.y
                 Binv = None
@@ -579,6 +579,7 @@ class GP(object):
             gp_pred = gp_pred[0]
 
         gp_pred += self.ymean
+
         return gp_pred
 
     def kernel(self, X1, X2, identical=False, predict_tree=None):
