@@ -32,11 +32,8 @@ def unmarshal_fn(dumped_code):
 def sparse_kernel_from_tree(tree, X, sparse_threshold, identical, noise_var):
     max_distance = np.sqrt(-np.log(sparse_threshold)) # assuming a SE kernel
     n = len(X)
-    t0 = time.time()
-    entries = tree.sparse_training_kernel_matrix(X, max_distance)
+    entries = tree.sparse_training_kernel_matrix(X, max_distance, False)
     spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,0], entries[:,1])), shape=(n,n), dtype=float)
-    t1 = time.time()
-    print "sparse kernel", t1-t0
 
     if identical:
         spK = spK + noise_var * scipy.sparse.eye(spK.shape[0])
@@ -58,10 +55,9 @@ def prior_grad(params, priors):
             grad[i] = prior.deriv_log_p(param)
     return grad
 
-def prior_sample(X, hyperparams, dfn_str, wfn_str, sparse_threshold=1e-20, return_kernel=False):
+def prior_sample_sparse(X, cov, noise_var, sparse_threshold=1e-20):
     n = X.shape[0]
-    noise_var, dfn_params, wfn_params = extract_hyperparams(dfn_str, wfn_str, hyperparams)
-    predict_tree = VectorTree(X, 1, dfn_str, dfn_params, wfn_str, wfn_params)
+    predict_tree = VectorTree(X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
 
     spK = sparse_kernel_from_tree(predict_tree, X, sparse_threshold, True, noise_var)
     factor = scikits.sparse.cholmod.cholesky(spK)
@@ -70,10 +66,42 @@ def prior_sample(X, hyperparams, dfn_str, wfn_str, sparse_threshold=1e-20, retur
     Pinv = np.argsort(P)
     z = np.random.randn(n)
     y = np.array((L * z)[Pinv]).reshape((-1,))
-    if return_kernel:
-        return y, spK
-    else:
-        return y
+    return y
+
+def prior_sample(X, cov, noise_var, sparse_threshold=1e-20):
+    n = X.shape[0]
+    predict_tree = VectorTree(X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
+
+    K = predict_tree.kernel_matrix(X, X, False)
+    K += np.eye(n) * noise_var
+
+    L = np.linalg.cholesky(K)
+
+    z = np.random.randn(n)
+    y = np.array(np.dot(L, z)).reshape((-1,))
+    return y
+
+
+def gaussian_logp(y, K):
+    n = K.shape[0]
+    L = scipy.linalg.cholesky(K, lower=True)
+    ld2 = np.log(np.diag(L)).sum() # this computes .5 * log(det(K))
+    alpha = scipy.linalg.cho_solve((L, True), y)
+    ll =  -.5 * ( np.dot(y.T, alpha) + n * np.log(2*np.pi)) - ld2
+
+    grad = -scipy.linalg.cho_solve((L, True), y)
+    return ll, grad
+
+def ll_under_GPprior(X, y, cov, noise_var, K=None):
+    n = X.shape[0]
+    predict_tree = VectorTree(X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
+
+    K = predict_tree.kernel_matrix(X, X, False)
+    K += np.eye(n) * noise_var
+
+    ll, grad = gaussian_logp(y, K)
+
+    return ll, grad
 
 def unpack_gpcov(d, prefix):
     try:
@@ -129,6 +157,11 @@ class GPCov(object):
             self.wfn_priors = [None,] * len(self.wfn_params)
         if self.dfn_priors is None:
             self.dfn_priors = [None,] * len(self.dfn_params)
+
+    def copy(self):
+        return GPCov(wfn_params = self.wfn_params.copy(), dfn_params=self.dfn_params.copy(),
+                     dfn_str = self.dfn_str, wfn_str=self.wfn_str,
+                     wfn_priors=self.wfn_priors, dfn_priors=self.dfn_priors, Xu= self.Xu.copy() if self.Xu is not None else None)
 
     def tree_params(self):
         return (self.dfn_str, self.dfn_params, self.wfn_str, self.wfn_params)
@@ -429,7 +462,7 @@ class GP(object):
                 self.alpha_r = self.y
                 self.ll = np.float('-inf')
                 return
-            import pdb; pdb.set_trace()
+
             self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
             # compute sparse kernel matrix
@@ -447,7 +480,7 @@ class GP(object):
             else:
                 self.K_fic_uu, self.K_fic_un = None, None
 
-            print "built kernel matrix"
+            #print "built kernel matrix"
 
             # invert kernel matrix
             if sparse_invert:
@@ -455,16 +488,16 @@ class GP(object):
                     self.K = self.sparsify(self.K)
                 alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
                 self.Kinv = self.sparsify(Kinv)
-                print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+                #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
             else:
                 alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
                 if build_tree:
                     self.Kinv = self.sparsify(Kinv)
-                    print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+                    #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
                 else:
                     self.Kinv=np.matrix(Kinv)
 
-            print "inverted kernel matrix"
+            #print "inverted kernel matrix"
 
             # if we have any additive low-rank covariances, compute the appropriate terms
             if H is not None or cov_fic is not None:
@@ -834,7 +867,7 @@ class GP(object):
     def variance(self,cond, **kwargs):
         return np.diag(self.covariance(cond, **kwargs))
 
-    def sample(self, cond, include_obs=True):
+    def sample(self, cond, include_obs=True, method="naive"):
         """
         Sample from the GP posterior at a set of points given by the rows of X1.
 
@@ -845,7 +878,17 @@ class GP(object):
         X1 = self.standardize_input_array(cond)
         (n,d) = X1.shape
         means = np.reshape(self.predict(X1), (-1, 1))
-        K = self.covariance(X1, include_obs=include_obs)
+
+
+        if method == "naive":
+            K = self.covariance(X1, include_obs=include_obs)
+        elif method == "sparse":
+            K = self.covariance_spkernel(X1, include_obs=include_obs)
+        elif method == "tree":
+            K = self.covariance_double_tree(X1, include_obs=include_obs)
+        else:
+            raise Exception("unknown covariance method %s" % method)
+
         samples = np.random.randn(n, 1)
 
         L = scipy.linalg.cholesky(K, lower=True)
@@ -897,7 +940,7 @@ class GP(object):
         # return k-dimensional vector
         # d log_p() / dy
 
-    def log_p(self, x, cond, include_obs=True, **kwargs):
+    def log_p(self, x, cond, include_obs=True, method="naive", eps_abs=1e-4, **kwargs):
         """
         The log probability of the observations (X1, y) under the posterior distribution.
         """
@@ -911,7 +954,14 @@ class GP(object):
         else:
             n = len(y)
 
-        K = self.covariance(X1, include_obs=include_obs)
+        if method == "naive":
+            K = self.covariance(X1, include_obs=include_obs)
+        elif method == "sparse":
+            K = self.covariance_spkernel(X1, include_obs=include_obs)
+        elif method == "tree":
+            K = self.covariance_double_tree(X1, include_obs=include_obs, eps_abs=eps_abs)
+        else:
+            raise Exception("unknown covariance method %s" % method)
         y = y-self.predict(X1)
 
         if n==1:
@@ -923,6 +973,7 @@ class GP(object):
         ld2 = np.log(np.diag(L)).sum() # this computes .5 * log(det(K))
         alpha = scipy.linalg.cho_solve((L, True), y)
         ll =  -.5 * ( np.dot(y.T, alpha) + n * np.log(2*np.pi)) - ld2
+
         return ll
 
 
@@ -1638,7 +1689,7 @@ def optimize_gp_hyperparams(optimize_Xu=True,
         #    print "warning: value error (%s) in likelihood computation, returning likelihood -inf" % str(e)
         #    ll = np.float("-inf")
         #    grad = np.zeros((len(v),))
-        print "hyperparams", v, "ll", ll, 'grad', grad
+        #print "hyperparams", v, "ll", ll, 'grad', grad
 
         if np.isnan(grad).any():
             raise Exception('nanana')
