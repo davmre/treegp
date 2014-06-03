@@ -270,6 +270,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
+       fcalls += 1;
 
        switch (cutoff_rule) {
        case 0:

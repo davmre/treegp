@@ -111,11 +111,15 @@ class VectorTree {
   wfn w;
   double * wp;
   double *dist_params;
+
+  google::dense_hash_map<unsigned long, double> *Kinv_for_dense_hack;
+
   void set_dist_params(const pyublas::numpy_vector<double> &dist_params);
 
 
 public:
   unsigned int n;
+  int dense_hack_terms;
   int fcalls;
   VectorTree (const pyublas::numpy_matrix<double> &pts, const unsigned int narms,
 	      const std::string &distfn_str, const pyublas::numpy_vector<double> &dist_params,
@@ -134,6 +138,12 @@ public:
   pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries);
 
   void dump_tree(const std::string &fname);
+
+  void set_Kinv_for_dense_hack(const pyublas::numpy_strided_vector<int> &nonzero_rows,
+			       const pyublas::numpy_strided_vector<int> &nonzero_cols,
+			       const pyublas::numpy_strided_vector<double> &nonzero_vals);
+
+  double quadratic_form_from_dense_hack(const pyublas::numpy_matrix<double> &query_pt1, const pyublas::numpy_matrix<double> &query_pt2, double max_distance);
 
 
   ~VectorTree();

@@ -13,6 +13,10 @@
 #include <limits>
 
 
+#include <google/dense_hash_map>
+using google::dense_hash_map;
+
+
 using namespace std;
 namespace bp = boost::python;
 
@@ -485,6 +489,87 @@ pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyubla
 }
 
 
+void VectorTree::set_Kinv_for_dense_hack(const pyublas::numpy_strided_vector<int> &nonzero_rows,
+					 const pyublas::numpy_strided_vector<int> &nonzero_cols,
+					 const pyublas::numpy_strided_vector<double> &nonzero_vals) {
+
+  this->Kinv_for_dense_hack = new dense_hash_map<unsigned long, double>;
+  this->Kinv_for_dense_hack->set_empty_key(this->n * this->n);
+
+  dense_hash_map<unsigned long, double> &hmap = *(this->Kinv_for_dense_hack);
+
+  for(unsigned int i=0; i < nonzero_rows.size(); ++i) {
+    unsigned long key = (unsigned long)nonzero_rows[i] * this->n + nonzero_cols[i];
+    hmap[key] = nonzero_vals[i];
+  }
+}
+
+double VectorTree::quadratic_form_from_dense_hack(const pyublas::numpy_matrix<double> &query_pt1, const pyublas::numpy_matrix<double> &query_pt2, double max_distance) {
+
+  dense_hash_map<unsigned long, double> &hmap = *(this->Kinv_for_dense_hack);
+
+  // we want to find all points which are near *both* pt1 and pt2. for the moment, let's concentrate on when pt1 and pt2 are the same.
+
+  point pt1 = {&query_pt1(0,0), 0};
+  point pt2 = {&query_pt2(0,0), 0};
+
+  if ((pt1.p[0] != pt2.p[0]) || (pt1.p[1] != pt2.p[1])) {
+    printf("ERROR: quadratic_form_from_dense_hack is not yet implemented for off-diagonal covariances.\n");
+    exit(1);
+  }
+
+  // find the training points near the query point
+  v_array<v_array<point> > res;
+  node<point> np1;
+  np1.p = pt1;
+  np1.max_dist = 0.;
+  np1.parent_dist = 0.;
+  np1.children = NULL;
+  np1.num_children = 0;
+  np1.scale = 100;
+  epsilon_nearest_neighbor(this->root,np1,res,max_distance, this->dfn, this->dist_params, this->dfn_extra);
+
+  this->dense_hack_terms = 0;
+
+  // compute the test-training kernel values, and evaluate the diagonal component of the quadratic form
+  v_array<double> kstar;
+  alloc(kstar, res[0].index);
+  double qf = 0;
+
+  for(int ii = 1; ii < res[0].index; ++ii) {
+    point train_p1 = res[0][ii];
+    int i = train_p1.idx;
+
+    double d = this->dfn(pt1, train_p1, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    push(kstar, this->w(d, this->wp));
+
+    unsigned long train_key = (unsigned long) i * this->n + i;
+    double Kinv = hmap[train_key];
+    qf += kstar[ii-1] * kstar[ii-1] * Kinv;
+    this->dense_hack_terms++;
+  }
+
+  // compute the off-diagonal component of the quadratic form
+  for(int ii = 1; ii < res[0].index; ++ii) {
+    point train_p1 = res[0][ii];
+    int i = train_p1.idx;
+
+    for(int jj = ii+1; jj < res[0].index; ++jj) {
+      point train_p2 = res[0][jj];
+      int j = train_p2.idx;
+
+      long train_key = (unsigned long) i * this->n + j;
+      double Kinv = hmap[train_key];
+
+      qf += kstar[ii-1] * kstar[jj-1] * Kinv * 2;
+      this->dense_hack_terms++;
+    }
+  }
+
+  return qf;
+}
+
+
 VectorTree::~VectorTree() {
   if (this->dist_params != NULL) {
     delete[] this->dist_params;
@@ -511,7 +596,10 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("kernel_deriv_wrt_xi", &VectorTree::kernel_deriv_wrt_xi)
     .def("kernel_deriv_wrt_i", &VectorTree::kernel_deriv_wrt_i)
     .def("sparse_kernel_deriv_wrt_i", &VectorTree::sparse_kernel_deriv_wrt_i)
-    .def_readonly("fcalls", &VectorTree::fcalls);
+    .def("quadratic_form_from_dense_hack", &VectorTree::quadratic_form_from_dense_hack)
+    .def("set_Kinv_for_dense_hack", &VectorTree::set_Kinv_for_dense_hack)
+    .def_readonly("fcalls", &VectorTree::fcalls)
+    .def_readonly("dense_hack_terms", &VectorTree::dense_hack_terms);
 
   bp::class_<MatrixTree>("MatrixTree", bp::init< pyublas::numpy_matrix< double > const &, pyublas::numpy_vector< int > const &, pyublas::numpy_vector< int > const &, string const &, pyublas::numpy_vector< double > const &, string const &, pyublas::numpy_vector< double > const &>())
     .def("collapse_leaf_bins", &MatrixTree::collapse_leaf_bins)

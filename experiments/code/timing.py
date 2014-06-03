@@ -27,7 +27,7 @@ def stats(v):
 def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, burnin=10, cutoff_rule=2):
 
     X_test, y_test = test_data(dataset_name)
-    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5)
+    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5, build_dense_Kinv_hack=True)
 
     if test_n is None:
         test_n = min(len(X_test), 5000)
@@ -66,7 +66,7 @@ def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=No
 
 def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, burnin=10, cutoff_rule=2):
     X_test, y_test = test_data(dataset_name)
-    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5)
+    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=0.5, build_dense_Kinv_hack=True)
     if test_n is None:
         test_n = min(len(X_test), 5000)
 
@@ -99,16 +99,24 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
     sparse_covar_spkernel_qftimes = np.zeros(test_n)
     sparse_covar_spkernel_nonqftimes = np.zeros(test_n)
 
+    sparse_covar_local = np.zeros(test_n)
+    sparse_covar_local_times = np.zeros(test_n)
+    sparse_covar_local_terms = np.zeros(test_n)
+    sparse_covar_local_qftimes = np.zeros(test_n)
+    sparse_covar_local_nonqftimes = np.zeros(test_n)
+
+
     sparse_covar_spkernel_solve = np.zeros(test_n)
     sparse_covar_spkernel_solve_times = np.zeros(test_n)
 
+    print "naive predict"
     for i in range(test_n):
         t0 = time.time()
         naive_predict[i] = gp.predict_naive(X_test[i:i+1,:])
         t1 = time.time()
         naive_predict_times[i] = t1-t0
 
-
+    print "tree predict"
     for i in range(test_n):
         t2 = time.time()
         tree_predict[i] = gp.predict(X_test[i:i+1,:], eps=1e-4)
@@ -116,7 +124,18 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
         tree_predict_times[i] = t3-t2
         tree_predict_terms[i] = gp.predict_tree.fcalls
 
+    print "treedense/local covar"
+    gp.nonqf_time = 0
+    for i in range(test_n):
+        t4 = time.time()
+        sparse_covar_local[i] = gp.covariance_treedense(X_test[i:i+1,:])
+        t5 = time.time()
+        sparse_covar_local_times[i] = t5-t4
+        sparse_covar_local_terms[i] = gp.terms
+        sparse_covar_local_qftimes[i] = gp.qf_time
+        sparse_covar_local_nonqftimes[i] = gp.nonqf_time
 
+    print "sparse covar"
     gp.nonqf_time = 0
     for i in range(test_n):
         t4 = time.time()
@@ -128,6 +147,7 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
 
 
 
+    print "spkernel"
     for i in range(test_n):
         t41 = time.time()
         sparse_covar_spkernel[i] = gp.covariance_spkernel(X_test[i:i+1,:])
@@ -195,6 +215,14 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
     f.write("sparse covar spkernel error: %f\n" % np.mean(np.abs(sparse_covar_spkernel[burnin:] - sparse_covar[burnin:])))
     f.write("\n")
 
+    f.write("sparse covar local times: %s\n" % strstats(sparse_covar_local_times[burnin:]))
+    f.write("sparse covar local terms: %s\n" % strstats(sparse_covar_local_terms[burnin:]))
+    f.write("sparse covar local qftimes: %s\n" % strstats(sparse_covar_local_qftimes[burnin:]))
+    f.write("sparse covar local nqftimes: %s\n" % strstats(sparse_covar_local_nonqftimes[burnin:]))
+    f.write("sparse covar local error: %s\n" % strstats(np.abs(sparse_covar_local[burnin:] - sparse_covar[burnin:])))
+    f.write("\n")
+
+
     """
     f.write("sparse covar spkernel_solve times: %s\n" % strstats(sparse_covar_spkernel_solve_times))
     f.write("sparse covar spkernel_solve error: %f\n" % np.mean(np.abs(sparse_covar_spkernel_solve - sparse_covar)))
@@ -235,7 +263,7 @@ def main():
         tag = None
 
     #profile_tree(dataset_name, model_name, tag=tag, test_n=700)
-    eval_gp(dataset_name, model_name, tag=tag)
+    eval_gp(dataset_name, model_name, tag=tag, test_n=200, burnin=5)
 
     #print "timings finished"
 
