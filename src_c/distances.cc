@@ -22,6 +22,7 @@ double dist_euclidean_deriv_wrt_theta(const double *p1, const double *p2, int i,
 }
 
 double dist_euclidean(const point p1, const point p2, double BOUND_IGNORED, const double *scales, void *dims) {
+  (( int *) dims)[1] += 1; // dfn_calls counter
   return sqrt(sqdist_euclidean(p1.p, p2.p, BOUND_IGNORED, scales, dims));
 }
 

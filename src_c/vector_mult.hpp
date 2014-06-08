@@ -119,8 +119,19 @@ class VectorTree {
 
 public:
   unsigned int n;
+
+
+  int nodes_touched;
+  int dfn_evals;
+  int wfn_evals;
+  int terms;
+
   int dense_hack_terms;
-  int fcalls;
+  int dense_hack_dfn_evals;
+  int dense_hack_wfn_evals;
+  double dense_hack_tree_s;
+  double dense_hack_math_s;
+
   VectorTree (const pyublas::numpy_matrix<double> &pts, const unsigned int narms,
 	      const std::string &distfn_str, const pyublas::numpy_vector<double> &dist_params,
 	      const std::string wfn_str,
@@ -190,8 +201,15 @@ public:
   unsigned int n;
   unsigned int nzero;
   unsigned int use_offdiag;
-  int fcalls;
+
+  int nodes_touched;
   int dfn_evals;
+  int wfn_evals;
+  int dfn_misses;
+  int wfn_misses;
+  int terms;
+  int zeroterms;
+
   MatrixTree (const pyublas::numpy_matrix<double> &pts,
 	      const pyublas::numpy_strided_vector<int> &nonzero_rows,
 	      const pyublas::numpy_strided_vector<int> &nonzero_cols,

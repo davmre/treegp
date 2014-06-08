@@ -198,7 +198,11 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 			double &abserr_sofar,
 			double &ws,
 			int max_terms,
-			int &fcalls,
+			int &nodes_touched,
+			int &terms,
+			int &zeroterms,
+			int &dfn_evals,
+			int &wfn_evals,
 			wfn w_upper,
 			wfn w_lower,
 			wfn w_point,
@@ -216,7 +220,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 				     // this calculation must be done
 				     // explicitly at the root before
 				     // this function is called.
-   fcalls += 1;
+   nodes_touched += 1;
    if (n.num_children == 0 && n.n_extra_p == 0) {
      // if we're at a leaf, just do the multiplication
 
@@ -224,6 +228,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
      if (w_upper == w_lower) {
        // if we can compute an exact kernel value from the product distance, do so
        weight = w_upper(d, wp_pair);
+       wfn_evals += 1;
      } else {
        // otherwise, compute the product kernel explicitly.  note that
        // w_point takes an *intermediate* representation of the
@@ -239,6 +244,12 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
      }
      ws += weight * n.unweighted_sums[v_select];
+
+     if (weight == 0 || n.unweighted_sums[v_select] == 0) {
+       zeroterms += 1;
+     } else {
+	   terms += 1;
+     }
 
      switch (cutoff_rule) {
      case 0:
@@ -266,11 +277,21 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
        double weight = first_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point)
 	 * second_half_w_query_cached(query_pt, n.extra_p[i], std::numeric_limits< double >::max(), dist_params, dist_extra, w_point, wp_point);
+
+       // a little confused about what's actually going on here...
+       wfn_evals += 2;
+       dfn_evals += 2;
+
        if (HACK_adj_offdiag) weight *= 2;
 
        ws += weight * epvals[i];
        exact_sum += weight * epvals[i];
-       fcalls += 1;
+       if (weight == 0 || epvals[v_select] == 0) {
+	 zeroterms += 1;
+       } else {
+	   terms += 1;
+       }
+
 
        switch (cutoff_rule) {
        case 0:
@@ -297,6 +318,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
    if (!query_in_bounds) {
      min_weight = w_lower(d + n.max_dist, wp_pair);
      max_weight = w_upper(max(0.0, d - n.max_dist), wp_pair);
+     wfn_evals += 2;
      //
      double frac_remaining_terms, abserr_n;
      switch (cutoff_rule) {
@@ -306,6 +328,12 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        if (cutoff) {
 	 ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
 	 weight_sofar += min_weight * n.num_leaves;
+	 if ( (.5 * (max_weight + min_weight) * n.unweighted_sums[v_select]) == 0) {
+	   zeroterms += 1;
+	 } else {
+	   terms += 1;
+	 }
+
        }
        break;
      case 1:
@@ -313,6 +341,12 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        cutoff = max_weight * n.unweighted_sums_abs[v_select] < threshold;
        if (cutoff) {
 	 ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
+	 if ( (.5 * (max_weight + min_weight) * n.unweighted_sums[v_select]) == 0) {
+	   zeroterms += 1;
+	 } else {
+	   terms += 1;
+	 }
+
        }
        break;
      case 2:
@@ -325,7 +359,11 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 	 //printf("cutting off: %d leaves (representing %.1f%% of %d-%d remaining), error bound %.8f, error budget %.4f - %.4f = %.4f, so we would have been allowed %.6f\n", n.num_leaves, frac_remaining_terms*100, max_terms, terms_sofar, abserr_n, eps_abs, abserr_sofar, eps_abs - abserr_sofar, threshold);
 	 terms_sofar += n.num_leaves;
 	 abserr_sofar += abserr_n;
-
+	 if ((.5 * (max_weight + min_weight) * n.unweighted_sums[v_select]) == 0) {
+	   zeroterms +=1 ;
+	 } else {
+	   terms += 1;
+	 }
        }
 
        break;
@@ -349,6 +387,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
 
      for(int i=0; i < n.num_children; ++i) {
        n.children[i].distance_to_query = dist(query_pt, n.children[i].p, std::numeric_limits< double >::max(), dist_params, dist_extra);
+       dfn_evals += 2;
        permutation[i] = i;
        //printf("%.4f ", n.children[i].distance_to_query);
      }
@@ -359,7 +398,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        weighted_sum_node(n.children[permutation[i]], v_select,
 			 query_pt, eps_rel, eps_abs, cutoff_rule,
 			 weight_sofar, terms_sofar, abserr_sofar,
-			 ws, max_terms, fcalls,
+			 ws, max_terms, nodes_touched, terms, zeroterms, dfn_evals, wfn_evals,
 			 w_upper, w_lower, w_point, wp_pair, wp_point,
 			 dist, dist_params, dist_extra, HACK_adj_offdiag);
      }
@@ -538,7 +577,12 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
    double abserr_sofar = 0;
    double ws = 0;
 
-   int fcalls = 0;
+   this->nodes_touched = 0;
+   this->terms = 0;
+   this->zeroterms = 0;
+   this->dfn_evals = 2;
+   this->wfn_evals = 0;
+
    this->root_diag.distance_to_query = this->factored_query_dist(qp, this->root_diag.p, std::numeric_limits< double >::max(), this->dist_params, (void*)this->dfn_extra);
    if (this->use_offdiag) {
      this->root_offdiag.distance_to_query = this->factored_query_dist(qp, this->root_offdiag.p, std::numeric_limits< double >::max(), this->dist_params, (void*)this->dfn_extra);
@@ -550,7 +594,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		      qp, eps_rel, eps_abs, cutoff_rule,
 		      weight_sofar, terms_sofar, abserr_sofar,
 		      ws, max_terms,
-		      fcalls, this->w_upper,
+		      this->nodes_touched, this->terms, this->zeroterms, this->dfn_evals, this->wfn_evals, this->w_upper,
 			   this->w_lower, this->w_point,
 			   this->wp_pair, this->wp_point,
 			   this->factored_query_dist,
@@ -563,7 +607,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 			qp, eps_rel, eps_abs, cutoff_rule,
 			weight_sofar, terms_sofar, abserr_sofar,
 			ws, max_terms,
-			fcalls, this->w_upper,
+			this->nodes_touched, this->terms, this->zeroterms, this->dfn_evals, this->wfn_evals, this->w_upper,
 			this->w_lower, this->w_point,
 			this->wp_pair, this->wp_point,
 			this->factored_query_dist,
@@ -578,7 +622,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       qp, eps_rel, eps_abs, cutoff_rule,
 		       weight_sofar, terms_sofar, abserr_sofar,
 		       ws, max_terms,
-		       fcalls, this->w_upper,
+		       this->nodes_touched, this->terms, this->zeroterms, this->dfn_evals, this->wfn_evals, this->w_upper,
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
@@ -589,7 +633,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       qp, eps_rel, eps_abs, cutoff_rule,
 		       weight_sofar, terms_sofar, abserr_sofar,
 		       ws, max_terms,
-		       fcalls, this->w_upper,
+		       this->nodes_touched, this->terms, this->zeroterms, this->dfn_evals, this->wfn_evals, this->w_upper,
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
@@ -601,7 +645,7 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 		       qp2, eps_rel, eps_abs, cutoff_rule,
 		       weight_sofar, terms_sofar, abserr_sofar,
 		       ws, max_terms,
-		       fcalls, this->w_upper,
+		       this->nodes_touched, this->terms, this->zeroterms, this->dfn_evals, this->wfn_evals, this->w_upper,
 		       this->w_lower, this->w_point,
 		       this->wp_pair, this->wp_point,
 		       this->factored_query_dist,
@@ -611,8 +655,8 @@ double MatrixTree::quadratic_form(const pyublas::numpy_matrix<double> &query_pt1
 
 
 
-   this->fcalls = fcalls;
-   this->dfn_evals = ((pair_dfn_extra *)this->dfn_extra)->misses;
+   this->dfn_misses = ((pair_dfn_extra *)this->dfn_extra)->misses;
+   this->wfn_misses = ((pair_dfn_extra *)this->dfn_extra)->w_misses;
    //printf("quadratic form did %.0lf distance calculations for %d fcalls\n", ((double *)(this->distance_cache))[0], this->fcalls);
 
    delete p->query1_cache;

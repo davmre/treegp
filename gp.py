@@ -436,6 +436,7 @@ class GP(object):
 
             # compute sparse kernel matrix
             if sparse_invert:
+                self._set_max_distance()
                 self.K = self.sparse_kernel(self.X, identical=True, predict_tree=self.predict_tree)
             else:
                 self.K = self.kernel(self.X, self.X, identical=True, predict_tree=self.predict_tree)
@@ -518,9 +519,7 @@ class GP(object):
             predict_tree_fic = None
         return predict_tree, predict_tree_fic
 
-    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_width, build_dense_Kinv_hack=False):
-        if self.n == 0: return
-
+    def _set_max_distance(self):
         if self.cov_main.wfn_str=="se" and self.sparse_threshold>0:
             self.max_distance = np.sqrt(-np.log(self.sparse_threshold))
         elif self.cov_main.wfn_str.startswith("compact"):
@@ -528,6 +527,11 @@ class GP(object):
         else:
             self.max_distance = 1e300
 
+
+    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_width, build_dense_Kinv_hack=False):
+        if self.n == 0: return
+
+        self._set_max_distance()
 
         fullness = len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2)
         # print "Kinv is %.1f%% full." % (fullness * 100)
@@ -770,7 +774,10 @@ class GP(object):
             t2 = time.time()
             self.qf_time = t2-t1
 
-            self.terms = self.predict_tree.dense_hack_terms
+
+            self.qf_dfn_evals = self.predict_tree.dense_hack_dfn_evals
+            self.qf_wfn_evals = self.predict_tree.dense_hack_wfn_evals
+            self.qf_terms = self.predict_tree.dense_hack_terms
 
 
         else:
@@ -874,6 +881,15 @@ class GP(object):
                 gp_cov -= qf
             t2 = time.time()
             self.qf_time = t2-t1
+
+            self.qf_terms = self.double_tree.terms
+            self.qf_zeroterms = self.double_tree.zeroterms
+            self.qf_nodes_touched = self.double_tree.nodes_touched
+            self.qf_dfn_evals = self.double_tree.dfn_evals
+            self.qf_dfn_misses = self.double_tree.dfn_misses
+            self.qf_wfn_evals = self.double_tree.wfn_evals
+            self.qf_wfn_misses = self.double_tree.wfn_misses
+
 
         else:
             gp_cov = np.zeros((m,m))

@@ -12,6 +12,9 @@
 #include <vector>
 #include <limits>
 
+#include <sys/time.h>
+
+
 
 #include <google/dense_hash_map>
 using google::dense_hash_map;
@@ -26,7 +29,7 @@ double weighted_sum_node(node<point> &n, int v_select,
 			 double &abserr_sofar,
 			 double &ws,
 			 int max_terms,
-			 int &fcalls,
+			 int &nodes_touched, int &terms, int &dfn_evals, int &wfn_evals,
 			 wfn w,
 			 distfn<point>::Type dist,
 			 const double * dist_params,
@@ -41,8 +44,9 @@ double weighted_sum_node(node<point> &n, int v_select,
 				    // this calculation must be done
 				    // explicitly at the root before
 				    // this function is called.
-  fcalls += 1;
   bool cutoff = false;
+
+  nodes_touched += 1;
 
   // if (fabs(n.p.p[1]) < .0000001) {
     //}
@@ -51,14 +55,21 @@ double weighted_sum_node(node<point> &n, int v_select,
     // if we're at a leaf, just do the multiplication
 
     double weight = w(d, weight_params);
+    wfn_evals += 1;
+
     ws += weight * n.unweighted_sums[v_select];
     //printf("at leaf: ws = %lf*%lf = %lf\n", weight, n.unweighted_sums[v_select], ws);
     cutoff = true;
+
+    terms += 1;
+
   } else {
     bool query_in_bounds = (d <= n.max_dist);
     if (!query_in_bounds) {
       double min_weight = w(d + n.max_dist, weight_params);
       double max_weight = w(max(0.0, d - n.max_dist), weight_params);
+      wfn_evals += 2;
+
 
       double frac_remaining_terms = n.num_leaves / (double)(max_terms - terms_sofar);
       double threshold = frac_remaining_terms * (eps_abs - abserr_sofar);
@@ -69,6 +80,9 @@ double weighted_sum_node(node<point> &n, int v_select,
 	// if we're cutting off, just compute an estimate of the sum
 	// in this region
 	ws += .5 * (max_weight + min_weight) * n.unweighted_sums[v_select];
+	terms += 1;
+
+
 	//printf("cutting off: ws = %lf*%lf = %lf\n", .5 * (max_weight + min_weight), n.unweighted_sums[v_select], ws);
 	//printf("cutting off: %d leaves (representing %.1f%% of %d-%d remaining), error bound %.8f, error budget %.4f - %.4f = %.4f, so we would have been allowed %.6f\n", n.num_leaves, frac_remaining_terms*100, max_terms, terms_sofar, abserr_n, eps_abs, abserr_sofar, eps_abs - abserr_sofar, threshold);
 
@@ -94,12 +108,14 @@ double weighted_sum_node(node<point> &n, int v_select,
 
       for(int i=0; i < n.num_children; ++i) {
 	n.children[i].distance_to_query = dist(query_pt, n.children[i].p, std::numeric_limits< double >::max(), dist_params, dist_extra);
+	dfn_evals += 1;
 	permutation[i] = i;
       }
       halfsort(permutation, n.num_children, n.children);
       for(int i=0; i < n.num_children; ++i) {
 	weighted_sum_node(n.children[permutation[i]], v_select,
-			  query_pt, eps_abs, terms_sofar, abserr_sofar, ws, max_terms, fcalls,
+			  query_pt, eps_abs, terms_sofar, abserr_sofar, ws, max_terms,
+			  nodes_touched, terms, dfn_evals, wfn_evals,
 			  w, dist, dist_params, dist_extra, weight_params);
       }
       if (permutation != (int *)&small_perm) {
@@ -141,7 +157,11 @@ void get_v_node(node<point> &n, int v_select, std::vector<double> &v) {
 double VectorTree::weighted_sum(int v_select, const pyublas::numpy_matrix<double> &query_pt, double eps) {
   point qp = {&query_pt(0,0), 0};
   double weight_sofar = 0;
-  int fcalls = 0;
+
+  this->nodes_touched = 0;
+  this->terms = 0;
+  this->dfn_evals = 1;
+  this->wfn_evals = 0;
 
   if (this->n == 0) {
     return 0;
@@ -157,11 +177,10 @@ double VectorTree::weighted_sum(int v_select, const pyublas::numpy_matrix<double
 		    qp, eps, terms_sofar,
 		    abserr_sofar, ws,
 		    max_terms,
-		    fcalls, this->w,
+		    this->nodes_touched, this->terms, this->dfn_evals, this->wfn_evals, this->w,
 		    this->dfn, this->dist_params,
 		    this->dfn_extra, this->wp);
 
-  this->fcalls = fcalls;
   return ws;
 }
 
@@ -224,7 +243,7 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
     this->ddfn_dx = dist3d_deriv_wrt_xi;
   } else if (distfn_str.compare("euclidean") == 0) {
     this->dfn = dist_euclidean;
-    this->dfn_extra = malloc(sizeof(int));
+    this->dfn_extra = malloc(2*sizeof(int));
     this->ddfn_dx = dist_euclidean_deriv_wrt_xi;
     this->ddfn_dtheta = dist_euclidean_deriv_wrt_theta;
     *((int *) this->dfn_extra) = pts.size2();
@@ -527,9 +546,27 @@ double VectorTree::quadratic_form_from_dense_hack(const pyublas::numpy_matrix<do
   np1.children = NULL;
   np1.num_children = 0;
   np1.scale = 100;
-  epsilon_nearest_neighbor(this->root,np1,res,max_distance, this->dfn, this->dist_params, this->dfn_extra);
 
+  this->dense_hack_dfn_evals = 0;
+  this->dense_hack_wfn_evals = 0;
   this->dense_hack_terms = 0;
+
+  struct timeval stop, start;
+  gettimeofday(&start, NULL);
+  //do stuff
+
+  if (this->dfn_extra) {
+    ((int *)this->dfn_extra)[1] = 0;
+  }
+  epsilon_nearest_neighbor(this->root,np1,res,max_distance, this->dfn, this->dist_params, this->dfn_extra);
+  if (this->dfn_extra) {
+    this->dense_hack_dfn_evals += ((int *)this->dfn_extra)[1];
+  }
+
+  gettimeofday(&stop, NULL);
+  this->dense_hack_tree_s = (stop.tv_sec - start.tv_sec) + (stop.tv_usec - start.tv_usec)/1000000.0;
+  gettimeofday(&start, NULL);
+
 
   // compute the test-training kernel values, and evaluate the diagonal component of the quadratic form
   v_array<double> kstar;
@@ -542,6 +579,9 @@ double VectorTree::quadratic_form_from_dense_hack(const pyublas::numpy_matrix<do
 
     double d = this->dfn(pt1, train_p1, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
     push(kstar, this->w(d, this->wp));
+
+    this->dense_hack_dfn_evals += 1;
+    this->dense_hack_wfn_evals += 1;
 
     unsigned long train_key = (unsigned long) i * this->n + i;
     double Kinv = hmap[train_key];
@@ -566,6 +606,8 @@ double VectorTree::quadratic_form_from_dense_hack(const pyublas::numpy_matrix<do
     }
   }
 
+  gettimeofday(&stop, NULL);
+  this->dense_hack_math_s =(stop.tv_sec - start.tv_sec) + (stop.tv_usec - start.tv_usec)/1000000.0;
   return qf;
 }
 
@@ -598,8 +640,15 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("sparse_kernel_deriv_wrt_i", &VectorTree::sparse_kernel_deriv_wrt_i)
     .def("quadratic_form_from_dense_hack", &VectorTree::quadratic_form_from_dense_hack)
     .def("set_Kinv_for_dense_hack", &VectorTree::set_Kinv_for_dense_hack)
-    .def_readonly("fcalls", &VectorTree::fcalls)
-    .def_readonly("dense_hack_terms", &VectorTree::dense_hack_terms);
+    .def_readonly("nodes_touched", &VectorTree::nodes_touched)
+    .def_readonly("dfn_evals", &VectorTree::dfn_evals)
+    .def_readonly("wfn_evals", &VectorTree::wfn_evals)
+    .def_readonly("terms", &VectorTree::terms)
+    .def_readonly("dense_hack_terms", &VectorTree::dense_hack_terms)
+    .def_readonly("dense_hack_dfn_evals", &VectorTree::dense_hack_dfn_evals)
+    .def_readonly("dense_hack_wfn_evals", &VectorTree::dense_hack_wfn_evals)
+    .def_readonly("dense_hack_tree_s", &VectorTree::dense_hack_tree_s)
+    .def_readonly("dense_hack_math_s", &VectorTree::dense_hack_math_s);
 
   bp::class_<MatrixTree>("MatrixTree", bp::init< pyublas::numpy_matrix< double > const &, pyublas::numpy_vector< int > const &, pyublas::numpy_vector< int > const &, string const &, pyublas::numpy_vector< double > const &, string const &, pyublas::numpy_vector< double > const &>())
     .def("collapse_leaf_bins", &MatrixTree::collapse_leaf_bins)
@@ -609,7 +658,12 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("quadratic_form", &MatrixTree::quadratic_form)
     .def("print_hierarchy", &MatrixTree::print_hierarchy)
     .def("test_bounds", &MatrixTree::test_bounds)
-    .def_readonly("fcalls", &MatrixTree::fcalls)
-    .def_readonly("dfn_evals", &MatrixTree::dfn_evals);
+    .def_readonly("nodes_touched", &MatrixTree::nodes_touched)
+    .def_readonly("dfn_evals", &MatrixTree::dfn_evals)
+    .def_readonly("wfn_evals", &MatrixTree::wfn_evals)
+    .def_readonly("terms", &MatrixTree::terms)
+    .def_readonly("zeroterms", &MatrixTree::zeroterms)
+    .def_readonly("dfn_misses", &MatrixTree::dfn_misses)
+    .def_readonly("wfn_misses", &MatrixTree::wfn_misses);
 
 }
