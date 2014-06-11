@@ -261,7 +261,7 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        terms_sofar += 1;
        break;
      }
-     //printf("at leaf: ws = %lf*%lf = %lf\n", weight, n.unweighted_sums[v_select], ws);
+     //printf("at leaf: ws += %lf*%lf = %lf\n", weight, n.unweighted_sums[v_select], ws);
      //printf("idx (%d, %d) pt1 (%.4f, %.4f) pt2 (%.4f, %.4f) Kinv=%.4f Kinv_abs=%.4f weight=%.4f ws=%.4f wSoFar=%.4f dist %.4f\n", n.p.idx1, n.p.idx2, n.p.pt1[0], n.p.pt1[1], n.p.pt2[0], n.p.pt2[1], n.unweighted_sums[v_select], n.unweighted_sums_abs[v_select], weight, ws, weight_sofar, d);
 
      return;
@@ -285,8 +285,8 @@ double second_half_w_query_cached(const pairpoint &p1, const pairpoint &p2, doub
        if (HACK_adj_offdiag) weight *= 2;
 
        ws += weight * epvals[i];
-       exact_sum += weight * epvals[i];
-       if (weight == 0 || epvals[v_select] == 0) {
+
+       if (weight == 0 || epvals[i] == 0) {
 	 zeroterms += 1;
        } else {
 	   terms += 1;

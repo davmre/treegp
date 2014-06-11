@@ -45,19 +45,22 @@ def training_data(dataset_name, n=None):
 
     return X_train, y_train
 
-def load_hparams(dataset_name, model_name, tag=None):
+def load_hparams(dataset_name=None, model_name=None, tag=None, hparam_file=None):
     fname = "hyperparams.pkl" if tag is None else "hyperparams_%s.pkl" % tag
-    hparam_file = os.path.join(BASEDIR, "models", dataset_name, model_name, fname)
+    if hparam_file is None:
+        hparam_file = os.path.join(BASEDIR, "models", dataset_name, model_name, fname)
+
     with open(hparam_file, 'r') as f:
         hparams = pickle.load(f)
     return hparams['cov_main'], hparams['cov_fic'], hparams['noise_var']
 
-def save_hparams(dataset_name, model_name, cov_main, cov_fic, noise_var, tag=None):
+def save_hparams(cov_main, cov_fic, noise_var, dataset_name=None, model_name=None, tag=None, hparam_file=None):
     fname = "hyperparams.pkl" if tag is None else "hyperparams_%s.pkl" % tag
-    hparam_dir = os.path.join(BASEDIR, "models", dataset_name, model_name)
-    mkdir_p(hparam_dir)
 
-    hparam_file = os.path.join(hparam_dir, fname)
+    if hparam_file is None:
+        hparam_dir = os.path.join(BASEDIR, "models", dataset_name, model_name)
+        mkdir_p(hparam_dir)
+        hparam_file = os.path.join(hparam_dir, fname)
 
     hparams = dict()
     hparams['cov_main']=cov_main
@@ -75,6 +78,10 @@ def predict_results_fname(dataset_name, model_name, tag):
     tstr = "" if tag is None else "_%s" % tag
     return os.path.join(BASEDIR, "models", dataset_name, model_name, 'accuracy%s.txt' % tstr)
 
+def compiled_tree_fname(dataset_name, model_name, tag):
+    tstr = "" if tag is None else "_%s" % tag
+    return os.path.join(BASEDIR, "models", dataset_name, model_name, 'tree%s' % tstr)
+
 def timing_results_fname(dataset_name, model_name, tag):
     tstr = "" if tag is None else "_%s" % tag
     return os.path.join(BASEDIR, "models", dataset_name, model_name, 'timings%s.txt' % tstr)
@@ -82,3 +89,10 @@ def timing_results_fname(dataset_name, model_name, tag):
 def timing_errors_fname(dataset_name, model_name, tag):
     tstr = "" if tag is None else "_%s" % tag
     return os.path.join(BASEDIR, "models", dataset_name, model_name, 'error%s.npz' % tstr)
+
+def get_spearmint_dir(dataset_name, model_name, tag):
+    d = os.path.join(BASEDIR, "spearmint", dataset_name, model_name)
+    if tag:
+        d = os.path.join(d, tag)
+    mkdir_p(d)
+    return d

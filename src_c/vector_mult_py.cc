@@ -658,6 +658,7 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("quadratic_form", &MatrixTree::quadratic_form)
     .def("print_hierarchy", &MatrixTree::print_hierarchy)
     .def("test_bounds", &MatrixTree::test_bounds)
+    .def("compile", &MatrixTree::compile)
     .def_readonly("nodes_touched", &MatrixTree::nodes_touched)
     .def_readonly("dfn_evals", &MatrixTree::dfn_evals)
     .def_readonly("wfn_evals", &MatrixTree::wfn_evals)

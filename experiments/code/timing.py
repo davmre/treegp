@@ -66,7 +66,7 @@ def profile_tree(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=No
 
 def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, burnin=10, cutoff_rule=2):
     X_test, y_test = test_data(dataset_name)
-    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=None, build_dense_Kinv_hack=True)
+    gp = trained_gp(dataset_name, model_name, n=n, tag=tag, build_tree=True, leaf_bin_width=None, build_dense_Kinv_hack=True, compile_tree=compiled_tree_fname(dataset_name, model_name, tag))
     if test_n is None:
         test_n = min(len(X_test), 5000)
 
@@ -215,6 +215,28 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
         tree_covar_qftimes[i] = gp.qf_time
         tree_covar_nonqftimes[i] = gp.nonqf_time
 
+    tree_compiled = np.zeros((test_n,))
+    tree_compiled_terms = np.zeros((test_n,))
+    tree_compiled_zeroterms = np.zeros((test_n,))
+    tree_compiled_nodes_touched = np.zeros((test_n,))
+    tree_compiled_dfn_evals = np.zeros((test_n,))
+    tree_compiled_times = np.zeros((test_n,))
+    tree_compiled_qftimes = np.zeros((test_n,))
+    tree_compiled_nonqftimes = np.zeros((test_n,))
+    for i in range(test_n):
+        t6 = time.time()
+        tree_compiled[i] = gp.covariance_compiled(X_test[i:i+1,:], eps_abs=eps_abs)
+        t7 = time.time()
+
+        tree_compiled_terms[i] = gp.qf_terms
+        tree_compiled_zeroterms[i] = gp.qf_zeroterms
+        tree_compiled_nodes_touched[i] = gp.qf_nodes_touched
+        tree_compiled_dfn_evals[i] = gp.qf_dfn_evals
+
+        tree_compiled_times[i] = t7-t6
+        tree_compiled_qftimes[i] = gp.qf_time
+        tree_compiled_nonqftimes[i] = gp.nonqf_time
+
 
     f.write("naive predict times: %s\n" % strstats(naive_predict_times[burnin:]))
     f.write("\n")
@@ -274,12 +296,25 @@ def eval_gp(dataset_name, model_name, tag=None, sgp=None, n=None, test_n=None, b
     f.write("tree: eps_abs %f abs errors: %s \n" %  (eps_abs, strstats(np.abs(tree_covar[burnin:] - sparse_covar[burnin:]))))
     f.write("\n")
 
+    f.write("compiled tree: eps_abs %f times: %s\n" % (eps_abs, strstats(tree_compiled_times[burnin:])))
+    f.write("compiled tree: eps_abs %f terms: %s\n" % (eps_abs, strstats(tree_compiled_terms[burnin:])))
+    f.write("compiled tree: eps_abs %f zeroterms: %s\n" % (eps_abs, strstats(tree_compiled_zeroterms[burnin:])))
+    f.write("compiled tree: eps_abs %f nodes touched: %s\n" % (eps_abs, strstats(tree_compiled_nodes_touched[burnin:])))
+    f.write("compiled tree: eps_abs %f dfn calls: %s\n" % (eps_abs, strstats(tree_compiled_dfn_evals[burnin:])))
+    f.write("compiled tree: eps_abs %f qftimes: %s\n" % (eps_abs, strstats(tree_compiled_qftimes[burnin:])))
+    f.write("compiled tree: eps_abs %f nqftimes: %s\n" % (eps_abs, strstats(tree_compiled_nonqftimes[burnin:])))
+    f.write("compiled tree: eps_abs %f rel errors: %s \n" %  (eps_abs, strstats(np.abs((tree_compiled[burnin:] - sparse_covar[burnin:])/(1-sparse_covar[burnin:])))))
+    f.write("compiled tree: eps_abs %f var-rel errors: %s \n" %  (eps_abs, strstats(np.abs((tree_compiled[burnin:] - sparse_covar[burnin:])/sparse_covar[burnin:]))))
+    f.write("compiled tree: eps_abs %f abs errors: %s \n" %  (eps_abs, strstats(np.abs(tree_compiled[burnin:] - sparse_covar[burnin:]))))
+    f.write("\n")
+
+
     max_i = np.argmax(tree_covar_times[burnin:]) + burnin
     f.write("most expensive variance point was %s at cost %f\n" % (X_test[max_i,:], tree_covar_times[max_i]))
 
     f.close()
 
-    np.savez(errorfile, tree_covar=tree_covar, sparse_covar=sparse_covar, tree_predict=tree_predict, naive_predict=naive_predict, sparse_covar_spkernel=sparse_covar_spkernel, burnin=burnin)
+    np.savez(errorfile, tree_compiled=tree_compiled, tree_covar=tree_covar, sparse_covar=sparse_covar, tree_predict=tree_predict, naive_predict=naive_predict, sparse_covar_spkernel=sparse_covar_spkernel, burnin=burnin)
 
     print "wrote results to", resultfile
 
