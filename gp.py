@@ -602,7 +602,9 @@ class GP(object):
 
             if not os.path.exists(linked_fname):
                 mkdir_p(compile_tree)
-                self.double_tree.compile(compile_tree, 1)
+                self.double_tree.compile(compile_tree, 0)
+                print "generated source files in ", compile_tree
+                import sys; sys.exit(1)
 
                 objfiles = []
                 for srcfile in os.listdir(compile_tree):
@@ -611,6 +613,7 @@ class GP(object):
                         objfiles.append(objfile)
                         os.system("gcc -pthread -fno-strict-aliasing -DNDEBUG -g -fwrapv -O2 -fPIC -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/pyublas/include -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/numpy/core/include -I/home/dmoore/local/include/ -I/usr/include/python2.7 -c %s -o %s -O3" % (os.path.join(compile_tree, srcfile), objfile))
                 os.system("g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro %s -L/ -lboost_python -o %s" % (" ".join(objfiles), linked_fname))
+
             import imp
             self.compiled_tree = imp.load_dynamic("compiled_tree", linked_fname)
             self.compiled_tree.init_distance_caches()

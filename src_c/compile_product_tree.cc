@@ -437,7 +437,7 @@ void write_weighted_sum_node(FILE *fp, int debug_level, char *dirname, node<pair
       write_weighted_sum_node(fp, debug_level, dirname, n.children[0], depth, max_terms, dims, diag);
     } else {
 
-      if ( (depth % 5) == 0 && n.num_leaves > 20) {
+      if ( (depth % 7) == 0 && n.num_leaves > 200) {
 	write_new_treefile(fp, debug_level, dirname, n, depth+1, max_terms, dims, diag);
       } else {
 	write_weighted_sum_nonleaf(fp, debug_level, dirname, n, depth+1, max_terms, dims, diag);
