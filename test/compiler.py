@@ -6,8 +6,10 @@ import os
 from treegp.gp import GP, GPCov
 
 def get_trivial_Xy():
-    X = np.array( ((0.0, 0.0), (0.1, -0.1), (1.0, 1.0), (1.0, 0.0) ) )
-    y = np.array((0.1, 0.2, -3, -1))
+    #X = np.array( ((0.0, 0.0), (0.1, -0.1), (1.0, 1.0), (1.0, 0.0) ) )
+
+    X = np.reshape(np.random.randn(200), (100,2))
+    y = np.random.randn(100)
     return X, y
 
 def build_gp(compile_tree=None):

@@ -13,6 +13,7 @@ import marshal
 
 from features import featurizer_from_string, recover_featurizer
 from cover_tree import VectorTree, MatrixTree
+from util import mkdir_p
 
 import scipy.weave as weave
 from scipy.weave import converters
@@ -595,14 +596,21 @@ class GP(object):
         t1 = time.time()
         print "built product tree on %d points in %.3fs" % (self.n, t1-t0)
         if compile_tree is not None:
-            source_fname = compile_tree + ".cc"
-            obj_fname = compile_tree + ".o"
-            linked_fname = compile_tree + ".so"
+            #source_fname = compile_tree + ".cc"
+            #obj_fname = compile_tree + ".o"
+            linked_fname = compile_tree + "/main.so"
 
             if not os.path.exists(linked_fname):
-                self.double_tree.compile(source_fname, 0)
-                os.system("gcc -pthread -fno-strict-aliasing -DNDEBUG -g -fwrapv -O2 -fPIC -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/pyublas/include -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/numpy/core/include -I/home/dmoore/local/include/ -I/usr/include/python2.7 -c %s -o %s -O3" % (source_fname, obj_fname))
-                os.system("g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro %s -L/ -lboost_python -o %s" % (obj_fname, linked_fname))
+                mkdir_p(compile_tree)
+                self.double_tree.compile(compile_tree, 1)
+
+                objfiles = []
+                for srcfile in os.listdir(compile_tree):
+                    if srcfile.endswith(".cc"):
+                        objfile = os.path.join(compile_tree, srcfile[:-3] + ".o")
+                        objfiles.append(objfile)
+                        os.system("gcc -pthread -fno-strict-aliasing -DNDEBUG -g -fwrapv -O2 -fPIC -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/pyublas/include -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/numpy/core/include -I/home/dmoore/local/include/ -I/usr/include/python2.7 -c %s -o %s -O3" % (os.path.join(compile_tree, srcfile), objfile))
+                os.system("g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro %s -L/ -lboost_python -o %s" % (" ".join(objfiles), linked_fname))
             import imp
             self.compiled_tree = imp.load_dynamic("compiled_tree", linked_fname)
             self.compiled_tree.init_distance_caches()

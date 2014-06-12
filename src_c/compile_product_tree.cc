@@ -10,8 +10,9 @@
  namespace bp = boost::python;
 
 int extra_p_counter = 0;
+int fn_counter = 0;
 
-void write_boilerplate_top(FILE *fp, int debug_level, int dims, int n) {
+void write_header(FILE *fp, int debug_level, int dims, int n) {
 fprintf(fp, "\
 \n\
 #include <cmath>\n\
@@ -20,11 +21,38 @@ fprintf(fp, "\
 #include <pyublas/numpy.hpp>\n\
 \n\
 struct pairpoint {\n\
-  double pt1[2];\n\
-  double pt2[2];\n\
+  double pt1[%d];\n\
+  double pt2[%d];\n\
   unsigned int idx1;\n\
   unsigned int idx2;\n\
 };\n\
+", dims, dims);
+
+   fprintf(fp, "\n\
+void print_point(const double *p);\n\
+void print_pairpoint(const pairpoint &p);\n\
+double distance(const double *p1, const double *p2);\n\
+double w_point(double r);\n\
+double w_lower(double r);\n\
+double w_upper(double r);\n\
+double first_half_w_query_cached(const pairpoint &query_pt, const pairpoint &p2);\n\
+double second_half_w_query_cached(const pairpoint &query_pt, const pairpoint &p2);\n\
+double factored_query_distance(const pairpoint &query_pt, const pairpoint &p2);\n\
+\n\
+void weighted_sum_offdiag(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs);\n\
+void weighted_sum_diag(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs);\n\
+");
+}
+
+void write_weighted_sum_prototypes(FILE *fp, int debug_level) {
+  for (int i=1; i <= fn_counter; ++i) {
+    fprintf(fp, "void continue_weighted_sum_%d(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs, double d, pairpoint *current_pt);\n", i);
+  }
+}
+
+void write_boilerplate_top(FILE *fp, int debug_level, int dims, int n) {
+fprintf(fp, "\
+\n\
 \n\
   double cached_query_distances[%d];\n\
   double cached_query_weights[%d];\n\
@@ -33,7 +61,7 @@ struct pairpoint {\n\
   unsigned int query_idx = 0;\n\
 \n\
 ", n, n, n, n);
- if (debug_level >= 1) {
+
    fprintf(fp, "\n\
   int terms = 0;\n\
   int zeroterms = 0;\n\
@@ -45,8 +73,8 @@ struct pairpoint {\n\
   int get_nodes_touched() { return nodes_touched; }\n\
   int get_dfn_evals() { return dfn_evals; }\n\
 ");
- }
- if (debug_level >= 2) {
+
+
    fprintf(fp, "\n\
 void print_point(const double *p) {\n\
   printf(\"(\");\n\
@@ -59,7 +87,7 @@ void print_pairpoint(const pairpoint &p) {\n\
   printf(\", \");\n\
   print_point(p.pt2);\n\
   printf(\", %%d, %%d }\", p.idx1, p.idx2);\n}\n", dims, dims);
- }
+
 }
 
 void write_boilerplate_bottom(FILE *fp, int debug_level) {
@@ -253,9 +281,9 @@ void write_pairpoint_literal(FILE *fp, int debug_level, pairpoint p, int dims) {
   fprintf(fp, ", %d, %d }", p.idx1, p.idx2);
 }
 
-void write_weighted_sum_node(FILE *fp, int debug_level, node<pairpoint> n, int max_terms, int dims, int diag);
+void write_weighted_sum_node(FILE *fp, int debug_level, char *dirname, node<pairpoint> n, int depth, int max_terms, int dims, int diag);
 
-void write_weighted_sum_nonleaf(FILE *fp, int debug_level, node<pairpoint> n, int max_terms, int dims, int diag) {
+void write_weighted_sum_nonleaf(FILE *fp, int debug_level, char *dirname, node<pairpoint> n, int depth, int max_terms, int dims, int diag) {
   /* in order to have sorted children, we'll have had to have a hard-coded list of children. so I shouldn't hard-code the points again here, but I can assume that there is *already* a pairpoint object current_pt defined in the code. I can also assume that there's *already* a distance d computed.
   */
 
@@ -312,7 +340,7 @@ fprintf(fp, "\
       }
     }
 
-    write_weighted_sum_node(fp, debug_level, n.children[i], max_terms, dims, diag);
+    write_weighted_sum_node(fp, debug_level, dirname, n.children[i], depth, max_terms, dims, diag);
   }
   fprintf(fp, "\n}\n");
 }
@@ -365,7 +393,33 @@ void write_weighted_sum_multileaf(FILE *fp, int debug_level, node<pairpoint> n, 
   fprintf(fp, "terms_sofar += %d;\n", n.n_extra_p);
 }
 
-void write_weighted_sum_node(FILE *fp, int debug_level, node<pairpoint> n, int max_terms, int dims, int diag) {
+void write_treefile_preamble(FILE *fp, int debug_level) {
+  fprintf(fp, "#include \"compiled_tree.h\"\n\n");
+  fprintf(fp, "\
+extern int terms;\n\
+extern int zeroterms;\n\
+extern int nodes_touched;\n\
+extern int dfn_evals;\n\
+");
+}
+
+void write_new_treefile(FILE *fp, int debug_level, char *dirname, node<pairpoint> n, int depth, int max_terms, int dims, int diag) {
+  char new_tree_fname[512];
+  snprintf(new_tree_fname,512, "%s/tree_%d.cc", dirname, ++fn_counter);
+
+  fprintf(fp, "continue_weighted_sum_%d(query_pt, ws, abserr_sofar, terms_sofar, eps_abs, d, current_pt);\n", fn_counter);
+
+  FILE *new_tree_fp = fopen(new_tree_fname, "w");
+  write_treefile_preamble(new_tree_fp, debug_level);
+  fprintf(new_tree_fp, "\n\nvoid continue_weighted_sum_%d(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs, double d, pairpoint *current_pt) {\n\
+double weight;\n\
+bool cutoff;\n", fn_counter);
+  write_weighted_sum_nonleaf(new_tree_fp, debug_level, dirname, n, depth, max_terms, dims, diag);
+  fprintf(new_tree_fp, "}\n");
+  fclose(new_tree_fp);
+}
+
+void write_weighted_sum_node(FILE *fp, int debug_level, char *dirname, node<pairpoint> n, int depth, int max_terms, int dims, int diag) {
   if (debug_level >= 1) {
     fprintf(fp, "nodes_touched += 1;\n");
   }
@@ -377,7 +431,18 @@ void write_weighted_sum_node(FILE *fp, int debug_level, node<pairpoint> n, int m
       write_weighted_sum_multileaf(fp, debug_level, n, dims, diag);
     }
   } else {
-    write_weighted_sum_nonleaf(fp, debug_level, n, max_terms, dims, diag);
+
+    if (n.num_children == 1) {
+      printf("skipping node with only a single child!\n");
+      write_weighted_sum_node(fp, debug_level, dirname, n.children[0], depth, max_terms, dims, diag);
+    } else {
+
+      if ( (depth % 5) == 0 && n.num_leaves > 20) {
+	write_new_treefile(fp, debug_level, dirname, n, depth+1, max_terms, dims, diag);
+      } else {
+	write_weighted_sum_nonleaf(fp, debug_level, dirname, n, depth+1, max_terms, dims, diag);
+      }
+    }
   }
 }
 
@@ -421,7 +486,7 @@ void write_weighted_sum_init(FILE *fp, int debug_level, pairpoint &p, int dims) 
   fprintf(fp, "bool cutoff;\ndouble weight;\n");
 }
 
-void write_weighted_sum_diag(FILE *fp, int debug_level, node<pairpoint> root_diag, int max_terms, int dims) {
+void write_weighted_sum_diag(FILE *fp, int debug_level, char *dirname, node<pairpoint> root_diag, int max_terms, int dims) {
   fprintf(fp, "void weighted_sum_diag(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs) {\n");
 
   if (debug_level >= 2) {
@@ -429,11 +494,11 @@ void write_weighted_sum_diag(FILE *fp, int debug_level, node<pairpoint> root_dia
   }
 
   write_weighted_sum_init(fp, debug_level, root_diag.p, dims);
-  write_weighted_sum_node(fp, debug_level, root_diag, max_terms, dims, 1);
+  write_weighted_sum_node(fp, debug_level, dirname, root_diag, 0, max_terms, dims, 1);
   fprintf(fp, "}\n");
 }
 
-void write_weighted_sum_offdiag(FILE *fp, int debug_level,  node<pairpoint> root_offdiag, int max_terms, int dims) {
+void write_weighted_sum_offdiag(FILE *fp, int debug_level, char *dirname, node<pairpoint> root_offdiag, int max_terms, int dims) {
   fprintf(fp, "void weighted_sum_offdiag(pairpoint &query_pt, double &ws, double &abserr_sofar, int &terms_sofar, double eps_abs) {\n");
 
   if (debug_level >= 2) {
@@ -441,14 +506,14 @@ void write_weighted_sum_offdiag(FILE *fp, int debug_level,  node<pairpoint> root
   }
 
   write_weighted_sum_init(fp, debug_level, root_offdiag.p, dims);
-  write_weighted_sum_node(fp, debug_level, root_offdiag, max_terms, dims, 0);
+  write_weighted_sum_node(fp, debug_level, dirname, root_offdiag, 0, max_terms, dims, 0);
   fprintf(fp, "}\n");
 }
 
-void MatrixTree::compile(char *fname, int debug_level) {
+
+void MatrixTree::compile(char *dirname, int debug_level) {
 
   // open file
-  FILE *fp = fopen(fname, "w");
 
 
   int dims = *((int *) this->dfn_extra->dfn_extra);
@@ -460,23 +525,37 @@ void MatrixTree::compile(char *fname, int debug_level) {
   int max_terms = this->root_diag.num_leaves + this->root_offdiag.num_leaves;
 
   // write Python module boilerplate
-  write_boilerplate_top(fp, debug_level, dims, this->n);
-
+  char header_fname[512];
+  snprintf(header_fname, 512, "%s/compiled_tree.h", dirname);
+  FILE *header_fp = fopen(header_fname, "w");
+  write_header(header_fp, debug_level, dims, this->n);
 
   // write distance and weight functions
-  write_euclidean_distance(fp, debug_level, dims, scales);
-  write_w_compact2(fp, debug_level, point_variance, pair_variance, j);
-  write_distance_cache_boilerplate(fp, debug_level, this->n);
+  char common_fname[512];
+  snprintf(common_fname, 512, "%s/common.cc", dirname);
+  FILE *common_fp = fopen(common_fname, "w");
+  fprintf(common_fp, "#include \"compiled_tree.h\"\n\n");
+  write_boilerplate_top(common_fp, debug_level, dims, this->n);
+  write_euclidean_distance(common_fp, debug_level, dims, scales);
+  write_w_compact2(common_fp, debug_level, point_variance, pair_variance, j);
+  write_distance_cache_boilerplate(common_fp, debug_level, this->n);
+  write_quadratic_form_symmetric(common_fp, debug_level, dims);
 
   // write weight function
-  write_weighted_sum_diag(fp, debug_level, this->root_diag, max_terms, dims);
-  write_weighted_sum_offdiag(fp, debug_level, this->root_offdiag, max_terms, dims);
-  write_quadratic_form_symmetric(fp, debug_level, dims);
+  char tree_fname[512];
+  snprintf(tree_fname, 512, "%s/tree.cc", dirname);
+  FILE *tree_fp = fopen(tree_fname, "w");
+  write_treefile_preamble(tree_fp, debug_level);
+  write_weighted_sum_diag(tree_fp, debug_level, dirname, this->root_diag, max_terms, dims);
+  write_weighted_sum_offdiag(tree_fp, debug_level, dirname, this->root_offdiag, max_terms, dims);
+  fclose(tree_fp);
+  write_weighted_sum_prototypes(header_fp, debug_level);
 
   // write any other required boilerplate
-  write_boilerplate_bottom(fp, debug_level);
+  write_boilerplate_bottom(common_fp, debug_level);
 
-  // close file
-  fclose(fp);
+
+  fclose(common_fp);
+  fclose(header_fp);
 
 }
