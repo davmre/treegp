@@ -118,7 +118,7 @@ def unpack_gpcov(d, prefix):
         return None
 
 
-def sort_morton(X, y):
+def sort_morton(X, y=None):
 
     def cmp_zorder(a, b):
             j = 0
@@ -137,7 +137,10 @@ def sort_morton(X, y):
 
     Xint = np.array((X + np.min(X, axis=0)) * 10000, dtype=int)
     p = sorted(np.arange(Xint.shape[0]), cmp= lambda i,j : cmp_zorder(Xint[i,:], Xint[j,:]))
-    return np.array(X[p,:], copy=True), np.array(y[p], copy=True)
+    if y is None:
+        return np.array(X[p,:], copy=True)
+    else:
+        return np.array(X[p,:], copy=True), np.array(y[p], copy=True)
 
 
 class GPCov(object):
@@ -206,17 +209,22 @@ class GP(object):
         assert(len(c.shape) == 2)
         return c
 
-    def build_kernel_matrix(self, X):
+    def training_kernel_matrix(self, X):
         K = self.kernel(X, X, identical=True)
-        return K + np.eye(K.shape[0], dtype=np.float64) * 1e-8 # try to avoid losing
-                                       # positive-definiteness
-                                       # to numeric issues
 
-    def sparse_build_kernel_matrix(self, X):
+        d = np.diag(K) + 1e-8
+        if self.y_obs_variances is not None:
+            d += self.y_obs_variances
+        K.fill_diagonal(d)
+
+        return K
+
+    def sparse_training_kernel_matrix(self, X):
         K = self.sparse_kernel(X, identical=True)
-        K = K + scipy.sparse.eye(K.shape[0], dtype=np.float64) * 1e-8 # try to avoid losing
-                                       # positive-definiteness
-                                       # to numeric issues
+        d = K.diagonal() + 1e-8
+        if self.y_obs_variances is not None:
+            d += self.y_obs_variances
+        K.setdiag(d)
         return K.tocsc()
 
     def invert_kernel_matrix(self, K):
@@ -345,7 +353,10 @@ class GP(object):
     def build_low_rank_model(self, alpha, Kinv_sp, H, b, Binv):
         """
         let n be the training size; we'll use an additional rank-m approximation.
-        the notation here follows section 2.7 in Rasmussen & Williams.
+        the notation here follows section 2.7 in Rasmussen & Williams. For
+        simplicity, K refers to the observation covariance matrix rather than the
+        underlying function covariance (i.e. it might really be K+noise_var*I, or
+        K+diag(y_obs_variances), etc.)
 
         takes:
          alpha: n x 1, equal to K^-1 y
@@ -407,6 +418,7 @@ class GP(object):
 
 
     def __init__(self, X=None, y=None,
+                 y_obs_variances=None,
                  fname=None,
                  noise_var=1.0,
                  cov_main=None,
@@ -452,6 +464,10 @@ class GP(object):
                 else:
                     self.ymean = 0.0
                 self.n = X.shape[0]
+                if y_obs_variances is not None:
+                    self.y_obs_variances = np.array(y_obs_variances, dtype=float)
+                else:
+                    self.y_obs_variances = None
             else:
                 self.X = np.reshape(np.array(()), (0,0))
                 self.y = np.reshape(np.array(()), (0,))
@@ -465,12 +481,11 @@ class GP(object):
 
             self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
-            # compute sparse kernel matrix
+            # compute sparse training kernel matrix (including per-observation noise if appropriate)
             if sparse_invert:
-                self.K = self.sparse_kernel(self.X, identical=True, predict_tree=self.predict_tree)
+                self.K = self.sparse_training_kernel_matrix(self.X)
             else:
-                self.K = self.kernel(self.X, self.X, identical=True, predict_tree=self.predict_tree)
-
+                self.K = self.training_kernel_matrix(self.X)
 
             # setup the parameteric features, if applicable, and return the feature representation of X
             H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
@@ -637,9 +652,9 @@ class GP(object):
         entries = predict_tree.sparse_training_kernel_matrix(X, max_distance, False)
         spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,1], entries[:,0])), shape=(self.n, len(X)), dtype=float)
 
-
         if identical:
             spK = spK + self.noise_var * scipy.sparse.eye(spK.shape[0])
+
         return spK
 
     def get_query_K_sparse(self, X1, no_R=False):
@@ -763,7 +778,6 @@ class GP(object):
             gp_cov += mean_cov
 
         gp_cov += pad * np.eye(gp_cov.shape[0])
-
         if self.predict_tree_fic is not None:
             gp_cov += np.diag(self.covariance_diag_correction(X1))
 
@@ -989,6 +1003,8 @@ class GP(object):
             d.update(self.featurizer_recovery)
         d['X']  = self.X,
         d['y'] =self.y,
+        if self.y_obs_variances is not None:
+            d['y_obs_variances'] =self.y_obs_variances,
         d['ymean'] = self.ymean,
         d['alpha_r'] =self.alpha_r,
         d['Kinv'] =self.Kinv,
@@ -1017,6 +1033,10 @@ class GP(object):
     def unpack_npz(self, npzfile):
         self.X = npzfile['X'][0]
         self.y = npzfile['y'][0]
+        if 'y_obs_variances' in npzfile:
+            self.y_obs_variances = npzfile['y_obs_variances'][0]
+        else:
+            self.y_obs_variances = None
         self.alpha_r = npzfile['alpha_r'].flatten()
         if 'ymean' in npzfile:
             self.ymean = npzfile['ymean']
@@ -1676,7 +1696,6 @@ def optimize_gp_hyperparams(optimize_Xu=True,
             print "warning: floating point error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
             grad = np.zeros((len(v),))
-            raise
         except np.linalg.linalg.LinAlgError as e:
             print "warning: lin alg error (%s) in likelihood computation, returning likelihood -inf" % str(e)
             ll = np.float("-inf")
