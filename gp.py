@@ -225,6 +225,7 @@ class GP(object):
         if self.y_obs_variances is not None:
             d += self.y_obs_variances
         K.setdiag(d)
+
         return K.tocsc()
 
     def invert_kernel_matrix(self, K):
@@ -468,6 +469,7 @@ class GP(object):
                     self.y_obs_variances = np.array(y_obs_variances, dtype=float)
                 else:
                     self.y_obs_variances = None
+
             else:
                 self.X = np.reshape(np.array(()), (0,0))
                 self.y = np.reshape(np.array(()), (0,))
@@ -812,6 +814,7 @@ class GP(object):
         t2 = time.time()
         self.qf_time = t2-t1
 
+
         if self.n_features > 0:
             t1 = time.time()
             H = self.get_data_features(X1)
@@ -879,7 +882,8 @@ class GP(object):
         return gp_cov
 
     def variance(self,cond, **kwargs):
-        return np.diag(self.covariance(cond, **kwargs))
+        v = np.diag(self.covariance(cond, **kwargs))
+        return v
 
     def sample(self, cond, include_obs=True, method="naive"):
         """
@@ -1006,7 +1010,7 @@ class GP(object):
         if self.y_obs_variances is not None:
             d['y_obs_variances'] =self.y_obs_variances,
         d['ymean'] = self.ymean,
-        d['alpha_r'] =self.alpha_r,
+        d['alpha_r'] =self.alpha_r
         d['Kinv'] =self.Kinv,
         #d['K'] =self.K,
         d['sparse_threshold'] =self.sparse_threshold,
@@ -1021,6 +1025,14 @@ class GP(object):
             d['Luu'] =self.Luu,
 
         return d
+
+    def __getstate__(self):
+        return self.pack_npz()
+
+    def __setstate__(self, d):
+        self.unpack_npz(d)
+        sparse_invert = scipy.sparse.issparse(self.Kinv)
+        self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
     def save_trained_model(self, filename):
         """
@@ -1043,7 +1055,15 @@ class GP(object):
         else:
             self.ymean = 0.0
 
-        self.noise_var = npzfile['noise_var'].item()
+        try:
+            # npz mode
+            self.noise_var = npzfile['noise_var'].item()
+            self.n_features = int(npzfile['n_features'])
+        except:
+            # dict mode
+            self.noise_var = npzfile['noise_var'][0]
+            self.n_features = npzfile['n_features'][0]
+
         self.cov_main = unpack_gpcov(npzfile, 'main')
         self.cov_fic = unpack_gpcov(npzfile, 'fic')
         if self.cov_fic is not None:
@@ -1054,7 +1074,7 @@ class GP(object):
         self.sparse_threshold = npzfile['sparse_threshold'][0]
         self.ll = npzfile['ll'][0]
 
-        self.n_features = int(npzfile['n_features'])
+
 
 
         if 'basis' in npzfile:
@@ -1102,6 +1122,8 @@ class GP(object):
         # everything is much simpler in the pure nonparametric case
         if self.n_features == 0:
             ld2_K = np.log(ldiag).sum()
+            if np.isnan(ld2_K):
+                import pdb; pdb.set_trace()
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha_r) + self.n * np.log(2*np.pi)) - ld2_K
             return
 
