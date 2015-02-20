@@ -27,7 +27,7 @@ extra_compile_args = ['-O3']
 extra_link_args = []
 
 ctree_root = 'src_c'
-ctree_sources = ['cover_tree_point.cc', 'cover_tree_pp_debug.cc', 'distances.cc', 'vector_mult_py.cc', 'quadratic_form_py.cc']
+ctree_sources = ['cover_tree_point.cc', 'cover_tree_pp_debug.cc', 'distances.cc', 'vector_mult_py.cc', 'quadratic_form_py.cc', 'compile_product_tree.cc']
 from imp import find_module
 f, pathname, descr = find_module("pyublas")
 CTREE_INCLUDE_DIRS = [os.path.join(pathname, "include"),]

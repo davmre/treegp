@@ -13,6 +13,7 @@ import marshal
 
 from features import featurizer_from_string, recover_featurizer
 from cover_tree import VectorTree, MatrixTree
+from util import mkdir_p
 
 import scipy.weave as weave
 from scipy.weave import converters
@@ -436,14 +437,16 @@ class GP(object):
                  K = None,
                  sort_events=True,
                  build_tree=False,
+                 compile_tree=None,
                  sparse_invert=True,
                  center_mean=False,
-                 leaf_bin_width = 0): # WARNING: bin sizes > 0 currently lead to memory leaks
+                 leaf_bin_width = 0,
+                 build_dense_Kinv_hack=False): # WARNING: bin sizes > 0 currently lead to memory leaks
 
 
         self.double_tree = None
         if fname is not None:
-            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width)
+            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
         else:
             if sort_events:
                 X, y = sort_morton(X, y) # arrange events by
@@ -454,6 +457,7 @@ class GP(object):
 
 
             self.cov_main, self.cov_fic, self.noise_var, self.sparse_threshold, self.basis = cov_main, cov_fic, noise_var, sparse_threshold, basis
+
             self.timings = dict()
 
             if X is not None:
@@ -486,6 +490,7 @@ class GP(object):
             # compute sparse training kernel matrix (including per-observation noise if appropriate)
             if sparse_invert:
                 self.K = self.sparse_training_kernel_matrix(self.X)
+                self._set_max_distance()
             else:
                 self.K = self.training_kernel_matrix(self.X)
 
@@ -538,7 +543,7 @@ class GP(object):
                 HH = None
 
             if build_tree:
-                self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width)
+                self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
 
             # precompute training set log likelihood, so we don't need
             # to keep L around.
@@ -566,8 +571,19 @@ class GP(object):
             predict_tree_fic = None
         return predict_tree, predict_tree_fic
 
-    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_width):
+    def _set_max_distance(self):
+        if self.cov_main.wfn_str=="se" and self.sparse_threshold>0:
+            self.max_distance = np.sqrt(-np.log(self.sparse_threshold))
+        elif self.cov_main.wfn_str.startswith("compact"):
+            self.max_distance = 1.0
+        else:
+            self.max_distance = 1e300
+
+
+    def build_point_tree(self, HKinv, Kinv, alpha_r, leaf_bin_width, build_dense_Kinv_hack=False, compile_tree=None):
         if self.n == 0: return
+
+        self._set_max_distance()
 
         fullness = len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2)
         # print "Kinv is %.1f%% full." % (fullness * 100)
@@ -585,10 +601,39 @@ class GP(object):
 
         nzr, nzc = Kinv.nonzero()
         vals = np.reshape(np.asarray(Kinv[nzr, nzc]), (-1,))
+
+        if build_dense_Kinv_hack:
+            self.predict_tree.set_Kinv_for_dense_hack(nzr, nzc, vals)
+
+        t0 = time.time()
         self.double_tree = MatrixTree(self.X, nzr, nzc, *self.cov_main.tree_params())
         self.double_tree.set_m_sparse(nzr, nzc, vals)
         if leaf_bin_width > 0:
             self.double_tree.collapse_leaf_bins(leaf_bin_width)
+        t1 = time.time()
+        print "built product tree on %d points in %.3fs" % (self.n, t1-t0)
+        if compile_tree is not None:
+            #source_fname = compile_tree + ".cc"
+            #obj_fname = compile_tree + ".o"
+            linked_fname = compile_tree + "/main.so"
+
+            if not os.path.exists(linked_fname):
+                mkdir_p(compile_tree)
+                self.double_tree.compile(compile_tree, 0)
+                print "generated source files in ", compile_tree
+                import sys; sys.exit(1)
+
+                objfiles = []
+                for srcfile in os.listdir(compile_tree):
+                    if srcfile.endswith(".cc"):
+                        objfile = os.path.join(compile_tree, srcfile[:-3] + ".o")
+                        objfiles.append(objfile)
+                        os.system("gcc -pthread -fno-strict-aliasing -DNDEBUG -g -fwrapv -O2 -fPIC -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/pyublas/include -I/home/dmoore/.virtualenvs/treegp/local/lib/python2.7/site-packages/numpy/core/include -I/home/dmoore/local/include/ -I/usr/include/python2.7 -c %s -o %s -O3" % (os.path.join(compile_tree, srcfile), objfile))
+                os.system("g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro %s -L/ -lboost_python -o %s" % (" ".join(objfiles), linked_fname))
+
+            import imp
+            self.compiled_tree = imp.load_dynamic("compiled_tree", linked_fname)
+            self.compiled_tree.init_distance_caches()
 
     def predict(self, cond, parametric_only=False, eps=1e-8):
         if not self.double_tree: return self.predict_naive(cond, parametric_only)
@@ -642,14 +687,8 @@ class GP(object):
     def sparse_kernel(self, X, identical=False, predict_tree=None, max_distance=None):
         predict_tree = self.predict_tree if predict_tree is None else predict_tree
 
-
         if max_distance is None:
-            if self.cov_main.wfn_str=="se" and self.sparse_threshold>0:
-                max_distance = np.sqrt(-np.log(self.sparse_threshold))
-            elif self.cov_main.wfn_str.startswith("compact"):
-                max_distance = 1.0
-            else:
-                max_distance = 1e300
+            max_distance = self.max_distance
 
         entries = predict_tree.sparse_training_kernel_matrix(X, max_distance, False)
         spK = scipy.sparse.coo_matrix((entries[:,2], (entries[:,1], entries[:,0])), shape=(self.n, len(X)), dtype=float)
@@ -785,6 +824,66 @@ class GP(object):
 
         return gp_cov
 
+
+    def covariance_treedense(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps_abs=1e-8, qf_only=False):
+
+        X1 = self.standardize_input_array(cond)
+        m = X1.shape[0]
+
+
+
+        if not parametric_only:
+            gp_cov = self.kernel(X1, X1, identical=include_obs)
+
+            t1 = time.time()
+            if self.n > 0:
+                qf = np.zeros(gp_cov.shape)
+                for i in range(m):
+                    for j in range(m):
+                        qf = self.predict_tree.quadratic_form_from_dense_hack(X1[i:i+1], X1[j:j+1], self.max_distance)
+                if qf_only:
+                    return qf
+                gp_cov -= qf
+            t2 = time.time()
+            self.qf_time = t2-t1
+
+
+            self.qf_dfn_evals = self.predict_tree.dense_hack_dfn_evals
+            self.qf_wfn_evals = self.predict_tree.dense_hack_wfn_evals
+            self.qf_terms = self.predict_tree.dense_hack_terms
+
+
+        else:
+            gp_cov = np.zeros((m,m))
+
+        if self.n_features > 0:
+            t1 = time.time()
+            H = self.get_data_features(X1)
+            #H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=np.float64)
+            HKinvKstar = np.zeros((self.n_features, m))
+
+            for i in range(self.n_features):
+                for j in range(m):
+                    HKinvKstar[i,j] = self.cov_tree.weighted_sum(i, X1[j:j+1,:], eps_abs)
+            R = H - HKinvKstar
+            v = np.dot(self.invc, R)
+            mc = np.dot(v.T, v)
+            gp_cov += mc
+            t2 = time.time()
+            self.nonqf_time = t2-t1
+        else:
+            self.nonqf_time = 0
+
+
+        gp_cov += pad * np.eye(m)
+
+        if self.predict_tree_fic is not None:
+            gp_cov += np.diag(self.covariance_diag_correction(X1))
+
+        return gp_cov
+
+
+
     def covariance(self, cond, include_obs=False, parametric_only=False, pad=1e-8, qf_only=False):
         """
         Compute the posterior covariance matrix at a set of points given by the rows of X1.
@@ -825,6 +924,8 @@ class GP(object):
             gp_cov += mean_cov
             t2 = time.time()
             self.nonqf_time = t2-t1
+        else:
+            self.nonqf_time = 0
 
         gp_cov += pad * np.eye(gp_cov.shape[0])
 
@@ -835,6 +936,7 @@ class GP(object):
         return gp_cov
 
     def covariance_double_tree(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps=-1, eps_abs=1e-4, cutoff_rule=1, qf_only=False):
+
         X1 = self.standardize_input_array(cond)
         m = X1.shape[0]
         cutoff_rule = int(cutoff_rule)
@@ -854,6 +956,15 @@ class GP(object):
             t2 = time.time()
             self.qf_time = t2-t1
 
+            self.qf_terms = self.double_tree.terms
+            self.qf_zeroterms = self.double_tree.zeroterms
+            self.qf_nodes_touched = self.double_tree.nodes_touched
+            self.qf_dfn_evals = self.double_tree.dfn_evals
+            self.qf_dfn_misses = self.double_tree.dfn_misses
+            self.qf_wfn_evals = self.double_tree.wfn_evals
+            self.qf_wfn_misses = self.double_tree.wfn_misses
+
+
         else:
             gp_cov = np.zeros((m,m))
 
@@ -872,12 +983,71 @@ class GP(object):
             gp_cov += mc
             t2 = time.time()
             self.nonqf_time = t2-t1
-
+        else:
+            self.nonqf_time = 0
 
         gp_cov += pad * np.eye(m)
 
         if self.predict_tree_fic is not None:
             gp_cov += np.diag(self.covariance_diag_correction(X1))
+
+
+
+        return gp_cov
+
+
+    def covariance_compiled(self, cond, include_obs=False, parametric_only=False, pad=1e-8, eps_abs=1e-4,  qf_only=False):
+
+        X1 = self.standardize_input_array(cond)
+        m = X1.shape[0]
+
+        if not parametric_only:
+            gp_cov = self.kernel(X1, X1, identical=include_obs)
+
+            t1 = time.time()
+            if self.n > 0:
+                qf = np.zeros(gp_cov.shape)
+                for i in range(m):
+                    for j in range(m):
+                        qf[i,j] = self.compiled_tree.quadratic_form_symmetric(X1[i:i+1], eps_abs)
+                if qf_only:
+                    return qf
+                gp_cov -= qf
+            t2 = time.time()
+            self.qf_time = t2-t1
+
+            #self.qf_terms = self.compiled_tree.get_terms()
+            #self.qf_zeroterms = self.compiled_tree.get_zeroterms()
+            #self.qf_nodes_touched = self.compiled_tree.get_nodes_touched()
+            #self.qf_dfn_evals = self.compiled_tree.get_dfn_evals()
+
+        else:
+            gp_cov = np.zeros((m,m))
+
+        if self.n_features > 0:
+            t1 = time.time()
+            H = self.get_data_features(X1)
+            #H = np.array([[f(x) for x in X1] for f in self.basisfns], dtype=np.float64)
+            HKinvKstar = np.zeros((self.n_features, m))
+
+            for i in range(self.n_features):
+                for j in range(m):
+                    HKinvKstar[i,j] = self.cov_tree.weighted_sum(i, X1[j:j+1,:], eps_abs)
+            R = H - HKinvKstar
+            v = np.dot(self.invc, R)
+            mc = np.dot(v.T, v)
+            gp_cov += mc
+            t2 = time.time()
+            self.nonqf_time = t2-t1
+        else:
+            self.nonqf_time = 0
+
+        gp_cov += pad * np.eye(m)
+
+        if self.predict_tree_fic is not None:
+            gp_cov += np.diag(self.covariance_diag_correction(X1))
+
+
 
         return gp_cov
 
@@ -1092,7 +1262,7 @@ class GP(object):
         else:
             self.HKinv = None
 
-    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0):
+    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0, build_dense_Kinv_hack=False, compile_tree=None):
         npzfile = np.load(filename)
         self.unpack_npz(npzfile)
         del npzfile.f
@@ -1103,7 +1273,7 @@ class GP(object):
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
         if build_tree:
             #self.factor = scikits.sparse.cholmod.cholesky(self.K)
-            self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width)
+            self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 

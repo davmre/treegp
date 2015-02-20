@@ -111,12 +111,27 @@ class VectorTree {
   wfn w;
   double * wp;
   double *dist_params;
+
+  google::dense_hash_map<unsigned long, double> *Kinv_for_dense_hack;
+
   void set_dist_params(const pyublas::numpy_vector<double> &dist_params);
 
 
 public:
   unsigned int n;
-  int fcalls;
+
+
+  int nodes_touched;
+  int dfn_evals;
+  int wfn_evals;
+  int terms;
+
+  int dense_hack_terms;
+  int dense_hack_dfn_evals;
+  int dense_hack_wfn_evals;
+  double dense_hack_tree_s;
+  double dense_hack_math_s;
+
   VectorTree (const pyublas::numpy_matrix<double> &pts, const unsigned int narms,
 	      const std::string &distfn_str, const pyublas::numpy_vector<double> &dist_params,
 	      const std::string wfn_str,
@@ -134,6 +149,12 @@ public:
   pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries);
 
   void dump_tree(const std::string &fname);
+
+  void set_Kinv_for_dense_hack(const pyublas::numpy_strided_vector<int> &nonzero_rows,
+			       const pyublas::numpy_strided_vector<int> &nonzero_cols,
+			       const pyublas::numpy_strided_vector<double> &nonzero_vals);
+
+  double quadratic_form_from_dense_hack(const pyublas::numpy_matrix<double> &query_pt1, const pyublas::numpy_matrix<double> &query_pt2, double max_distance);
 
 
   ~VectorTree();
@@ -180,8 +201,15 @@ public:
   unsigned int n;
   unsigned int nzero;
   unsigned int use_offdiag;
-  int fcalls;
+
+  int nodes_touched;
   int dfn_evals;
+  int wfn_evals;
+  int dfn_misses;
+  int wfn_misses;
+  int terms;
+  int zeroterms;
+
   MatrixTree (const pyublas::numpy_matrix<double> &pts,
 	      const pyublas::numpy_strided_vector<int> &nonzero_rows,
 	      const pyublas::numpy_strided_vector<int> &nonzero_cols,
@@ -198,6 +226,8 @@ public:
   double quadratic_form(const pyublas::numpy_matrix<double> &query_pt1,
 			const pyublas::numpy_matrix<double> &query_pt2,
 			double eps_rel, double eps_abs, int cutoff_rule);
+
+  void compile(char *fname, int debug_level);
 
   void print_hierarchy(const pyublas::numpy_matrix<double> &query_pt1, const pyublas::numpy_matrix<double> &query_pt2);
 
