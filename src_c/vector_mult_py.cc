@@ -320,6 +320,7 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
   pyublas::numpy_matrix<double> K(pts.size1()*2, 3);
 
   unsigned long nzero = 0;
+  //printf("saw %d points\n", pts.size1 ());
   for (unsigned i = 0; i < pts.size1 (); ++ i) {
     v_array<v_array<point> > res;
     point p1 = {&pts(i, 0), 0};
@@ -334,18 +335,19 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
 
     epsilon_nearest_neighbor(this->root,np1,res,max_distance, this->dfn, this->dist_params, this->dfn_extra);
 
-    /*
-    if( (p1.p[0] < -116.8) && (p1.p[0] > -116.9) && (p1.p[1] < - 74.4) && (p1.p[1] > -74.6) ) {
-      printf("nn got %d results for %f, %f\n", res[0].index, p1.p[0], p1.p[1]);
-      printf("dfn params %f %f\n", this->dist_params[0], this->dist_params[1]);
-      printf("root is %p and has %d children\n", &this->root, this->root.num_children);
-      }*/
 
-    for(int jj = 1; jj < res[0].index; ++jj) {
+    //printf("nn got %d results for %f, %f\n", res[0].index, p1.p[0], p1.p[1]);
+    //printf("dfn params %f %f\n", this->dist_params[0], this->dist_params[1]);
+    //printf("root is %p and has %d children\n", &this->root, this->root.num_children);
+
+    for(int jj = 0; jj < res[0].index; ++jj) {
       point p2 = res[0][jj];
       int j = p2.idx;
 
       double d = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+
+      //printf("point %f, %f is at distance %f\n", p2.p[0], p2.p[1], d);
+
       if (nzero == K.size1()) {
 	K.resize(K.size1()*2, 3);
       }
