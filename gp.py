@@ -489,8 +489,8 @@ class GP(object):
 
             # compute sparse training kernel matrix (including per-observation noise if appropriate)
             if sparse_invert:
-                self.K = self.sparse_training_kernel_matrix(self.X)
                 self._set_max_distance()
+                self.K = self.sparse_training_kernel_matrix(self.X)
             else:
                 self.K = self.training_kernel_matrix(self.X)
 
