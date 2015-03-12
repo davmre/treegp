@@ -119,7 +119,7 @@ def unpack_gpcov(d, prefix):
         return None
 
 
-def sort_morton(X, y=None):
+def sort_morton(X, *args):
 
     def cmp_zorder(a, b):
             j = 0
@@ -138,11 +138,12 @@ def sort_morton(X, y=None):
 
     Xint = np.array((X + np.min(X, axis=0)) * 10000, dtype=int)
     p = sorted(np.arange(Xint.shape[0]), cmp= lambda i,j : cmp_zorder(Xint[i,:], Xint[j,:]))
-    if y is None:
-        return np.array(X[p,:], copy=True)
-    else:
-        return np.array(X[p,:], copy=True), np.array(y[p], copy=True)
 
+    returns = [np.array(X[p,:], copy=True)]
+    for y in args:
+        returns.append(None if y is None else np.array(y[p], copy=True))
+
+    return tuple(returns)
 
 class GPCov(object):
     def __init__(self, wfn_params, dfn_params,
@@ -449,11 +450,11 @@ class GP(object):
             self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
         else:
             if sort_events:
-                X, y = sort_morton(X, y) # arrange events by
-                                              # lon/lat, as a
-                                              # heuristic to expose
-                                              # block structure in the
-                                              # kernel matrix
+                X, y, y_obs_variances = sort_morton(X, y, y_obs_variances) # arrange events by
+                # lon/lat, as a
+                # heuristic to expose
+                # block structure in the
+                # kernel matrix
 
 
             self.cov_main, self.cov_fic, self.noise_var, self.sparse_threshold, self.basis = cov_main, cov_fic, noise_var, sparse_threshold, basis
@@ -470,7 +471,7 @@ class GP(object):
                     self.ymean = 0.0
                 self.n = X.shape[0]
                 if y_obs_variances is not None:
-                    self.y_obs_variances = np.array(y_obs_variances, dtype=float)
+                    self.y_obs_variances = np.array(y_obs_variances, dtype=float).flatten()
                 else:
                     self.y_obs_variances = None
 
@@ -1295,6 +1296,7 @@ class GP(object):
             if np.isnan(ld2_K):
                 import pdb; pdb.set_trace()
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha_r) + self.n * np.log(2*np.pi)) - ld2_K
+
             return
 
         # keeping explicit CSFIC likelihood code commented out, for debugging.
