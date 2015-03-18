@@ -69,7 +69,7 @@ def prior_sample_sparse(X, cov, noise_var, sparse_threshold=1e-20):
     y = np.array((L * z)[Pinv]).reshape((-1,))
     return y
 
-def prior_sample(X, cov, noise_var, sparse_threshold=1e-20):
+def prior_sample(X, cov, noise_var, sparse_threshold=1e-20, return_K=False):
     n = X.shape[0]
     predict_tree = VectorTree(X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
 
@@ -80,7 +80,11 @@ def prior_sample(X, cov, noise_var, sparse_threshold=1e-20):
 
     z = np.random.randn(n)
     y = np.array(np.dot(L, z)).reshape((-1,))
-    return y
+
+    if return_K:
+        return y, K
+    else:
+        return y
 
 
 def gaussian_logp(y, K):
@@ -441,6 +445,7 @@ class GP(object):
                  compile_tree=None,
                  sparse_invert=True,
                  center_mean=False,
+                 ymean=0.0,
                  leaf_bin_width = 0,
                  build_dense_Kinv_hack=False): # WARNING: bin sizes > 0 currently lead to memory leaks
 
@@ -468,7 +473,8 @@ class GP(object):
                     self.ymean = np.mean(y)
                     self.y -= self.ymean
                 else:
-                    self.ymean = 0.0
+                    self.ymean = ymean
+                    self.y -= self.ymean
                 self.n = X.shape[0]
                 if y_obs_variances is not None:
                     self.y_obs_variances = np.array(y_obs_variances, dtype=float).flatten()
@@ -479,7 +485,7 @@ class GP(object):
                 self.X = np.reshape(np.array(()), (0,0))
                 self.y = np.reshape(np.array(()), (0,))
                 self.n = 0
-                self.ymean = 0.0
+                self.ymean = ymean
                 self.K = np.reshape(np.array(()), (0,0))
                 self.Kinv = np.reshape(np.array(()), (0,0))
                 self.alpha_r = self.y
@@ -1204,6 +1210,10 @@ class GP(object):
         self.unpack_npz(d)
         sparse_invert = scipy.sparse.issparse(self.Kinv)
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
+        self.double_tree = None
+        self.n = self.X.shape[0]
+
+
 
     def save_trained_model(self, filename):
         """
@@ -1272,9 +1282,12 @@ class GP(object):
         self.n = self.X.shape[0]
         sparse_invert = scipy.sparse.issparse(self.Kinv)
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
+
         if build_tree:
             #self.factor = scikits.sparse.cholmod.cholesky(self.K)
             self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
+        else:
+            self.double_tree = None
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 
