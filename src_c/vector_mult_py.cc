@@ -363,7 +363,8 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
     //printf("dfn params %f %f\n", this->dist_params[0], this->dist_params[1]);
     //printf("root is %p and has %d children\n", &this->root, this->root.num_children);
 
-    for(int jj = 0; jj < res[0].index; ++jj) {
+    int min_idx = res[0].index > 1 ? 1 : 0;
+    for(int jj = min_idx; jj < res[0].index; ++jj) {
       point p2 = res[0][jj];
       int j = p2.idx;
 

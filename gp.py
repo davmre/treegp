@@ -218,16 +218,16 @@ class GP(object):
     def training_kernel_matrix(self, X):
         K = self.kernel(X, X, identical=True)
 
-        d = np.diag(K) + 1e-8
+        d = np.diag(K).copy() #+ 1e-8
         if self.y_obs_variances is not None:
             d += self.y_obs_variances
-        K.fill_diagonal(d)
+        np.fill_diagonal(K, d)
 
         return K
 
     def sparse_training_kernel_matrix(self, X):
         K = self.sparse_kernel(X, identical=True)
-        d = K.diagonal() + 1e-8
+        d = K.diagonal().copy() # + 1e-8
         if self.y_obs_variances is not None:
             d += self.y_obs_variances
         K.setdiag(d)
@@ -1299,7 +1299,6 @@ class GP(object):
             ldiag = L.diagonal()
         else:
             ldiag = np.diag(L)
-
 
         z = np.reshape(z, (-1, 1))
 
