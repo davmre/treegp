@@ -69,13 +69,17 @@ def prior_sample_sparse(X, cov, noise_var, sparse_threshold=1e-20):
     y = np.array((L * z)[Pinv]).reshape((-1,))
     return y
 
-def prior_sample(X, cov, noise_var, sparse_threshold=1e-20, return_K=False):
+def mcov(X, cov, noise_var):
     n = X.shape[0]
     predict_tree = VectorTree(X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
 
     K = predict_tree.kernel_matrix(X, X, False)
     K += np.eye(n) * noise_var
+    return K
 
+def prior_sample(X, cov, noise_var, sparse_threshold=1e-20, return_K=False):
+    n =  X.shape[0]
+    K = mcov(X, cov, noise_var)
     L = np.linalg.cholesky(K)
 
     z = np.random.randn(n)
