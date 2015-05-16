@@ -691,6 +691,49 @@ class GP(object):
 
         return gp_pred
 
+    def dK(self, X1, X2, i, identical=False):
+        if (i == 0):
+            dKdi = np.eye(X1.shape[0]) if identical else np.zeros((X1.shape[0], X2.shape[0]))
+        elif (i == 1):
+            if (len(self.cov_main.wfn_params) != 1):
+                raise ValueError('gradient computation currently assumes just a single scaling parameter for weight function, but currently wfn_params=%s' % self.cov_main.wfn_params)
+            dKdi = self.kernel(X1, X2, identical=False) / self.cov_main.wfn_params[0]
+        else:
+            dc = self.predict_tree.kernel_matrix(X1, X2, True)
+            dKdi = self.predict_tree.kernel_deriv_wrt_i(X1, X2, i-2, 1 if identical else 0, dc)
+        return dKdi
+
+    def grad_prediction(self, cond, i):
+        """
+        Compute the derivative of the predictive distribution (mean and
+        cov matrix) at a given location with respect to a kernel hyperparameter.
+        """
+
+
+        X1 = self.standardize_input_array(cond).astype(np.float)
+
+        n_main_params = len(self.cov_main.flatten())
+        nparams = 1 + n_main_params
+
+        Kstar = self.kernel(X1, self.X)
+
+        dKstar = self.dK(X1, self.X, i, identical=False)
+        dKy = self.dK(self.X, self.X, i, identical=True)
+
+        dKyinv = -np.dot(self.Kinv, np.dot(dKy, self.Kinv))
+
+        Kstar_Kyinv = np.dot(Kstar, self.Kinv)
+        d_Kstar_Kyinv = np.dot(Kstar, dKyinv) + np.dot(dKstar, self.Kinv)
+        dmean = np.dot(d_Kstar_Kyinv, self.y)
+
+        #Kss = self.kernel(X1, X1)
+        dKss = self.dK(X1, X1, i, identical=True)
+
+        dqf = np.dot(d_Kstar_Kyinv, Kstar.T) + np.dot(Kstar_Kyinv, dKstar.T)
+        dcov = dKss - dqf
+
+        return dmean, dcov
+
     def kernel(self, X1, X2, identical=False, predict_tree=None):
         predict_tree = self.predict_tree if predict_tree is None else predict_tree
         K = predict_tree.kernel_matrix(X1, X2, False)
@@ -1300,6 +1343,7 @@ class GP(object):
 
 
 
+
     def _compute_marginal_likelihood(self, L, z, Binv, H, K, Kinv):
 
         if scipy.sparse.issparse(L):
@@ -1469,6 +1513,7 @@ class GP(object):
             #dKdi_empirical = self.get_dKdi_empirical_fic_dfn(i-n_main_params-2)
 
         else:
+            assert(target_X is None)
             p = int(np.floor((i-n_main_params-n_fic_non_inducing-1) / self.cov_fic.Xu.shape[1]))
             ii = (i-n_main_params-n_fic_non_inducing-1) % self.cov_fic.Xu.shape[1]
             dKuu_di = self.deriv_uu_wrt_Xu(p,ii)

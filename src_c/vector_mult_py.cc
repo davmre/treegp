@@ -448,8 +448,15 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
     exit(1);
   }
 
-
  pyublas::numpy_matrix<double> K(pts1.size1(), pts2.size1());
+
+ if (symmetric) {
+   if (pts1.size1() != pts2.size1()) {
+     printf("error: kernel_deriv_wrt_i called as symmetric with unequal dimensions %d, %d\n", pts1.size1(), pts2.size1());
+     exit(-1);
+   }
+ }
+
   /*
   for(unsigned i = 0; i < pts1.size1 (); ++ i) {
     for (unsigned j = 0; j < pts2.size1 (); ++ j) {
@@ -462,7 +469,9 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
     point p1 = {&pts1(i, 0), 0};
 
     int min_j = 0;
-    if (symmetric) {min_j = i;}
+    if (symmetric) {
+      min_j = i;
+    }
 
     for (unsigned j = min_j; j < pts2.size1 (); ++ j) {
       point p2 = {&pts2(j, 0), 0};
