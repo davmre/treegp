@@ -17,7 +17,7 @@ else:
 print sys_includes
 print sys_libraries
 
-#extra_compile_args = ['-g', '-pg']
+#extra_compile_args = ['-g', '-pg', '-O0']
 extra_compile_args = ['-O3']
 
 # extra_compile_args += [ '--stdlib=libc++'] # uncomment this for OSX/clang

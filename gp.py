@@ -115,6 +115,24 @@ def ll_under_GPprior(X, y, cov, noise_var, K=None):
 
     return ll, grad
 
+
+def dgaussian(r, prec, dcov, dmean=None):
+    # derivative of gaussian likelihood wrt derivatives of the mean, cov matrices
+    r = r.reshape((-1, 1))
+
+    dprec = -np.dot(prec, np.dot(dcov, prec))
+    dll_dcov = -.5*np.dot(r.T, np.dot(dprec, r))
+    dll_dcov -= .5*np.trace(np.dot(prec, dcov))
+    dll = dll_dcov
+
+    if dmean is not None:
+        dmean = dmean.reshape((-1, 1))
+        dll_dmean = np.dot(r.T, np.dot(prec, dmean))
+        dll += dll_dmean
+
+    return dll
+
+
 def unpack_gpcov(d, prefix):
     try:
         wfn_str = d[prefix+'_wfn_str']
@@ -691,7 +709,7 @@ class GP(object):
 
         return gp_pred
 
-    def dK(self, X1, X2, i, identical=False):
+    def dKdi(self, X1, X2, i, identical=False):
         if (i == 0):
             dKdi = np.eye(X1.shape[0]) if identical else np.zeros((X1.shape[0], X2.shape[0]))
         elif (i == 1):
@@ -703,13 +721,31 @@ class GP(object):
             dKdi = self.predict_tree.kernel_deriv_wrt_i(X1, X2, i-2, 1 if identical else 0, dc)
         return dKdi
 
+    def dKdx(self, X1, p, i, X2=None):
+        # derivative of kernel(X1, X2) wrt i'th coordinate of p'th point in X1.
+        if X2 is None:
+            # consider k(X1, X1)
+            """
+            n = X1.shape[0]
+            xp =  np.array(X1[p:p+1,:], copy=True)
+            dK = np.zeros((n, n))
+            kp = self.predict_tree_fic.kernel_deriv_wrt_xi(xp, X1, 0, i)
+            dK[p,:] = kp
+            dK[:,p] = kp
+            """
+            dK = self.predict_tree.kernel_deriv_wrt_xi(X1, X1, p, i)
+            dK += dK.T
+            dK[p,p] = 0
+        else:
+            dK = self.predict_tree.kernel_deriv_wrt_xi(X1, X2, p, i)
+        return dK
+
     def grad_prediction(self, cond, i):
         """
         Compute the derivative of the predictive distribution (mean and
         cov matrix) at a given location with respect to a kernel hyperparameter.
         """
-
-
+        # ONLY WORKS for zero-mean dense GPs with no inducing points or parametric components
         X1 = self.standardize_input_array(cond).astype(np.float)
 
         n_main_params = len(self.cov_main.flatten())
@@ -717,8 +753,8 @@ class GP(object):
 
         Kstar = self.kernel(X1, self.X)
 
-        dKstar = self.dK(X1, self.X, i, identical=False)
-        dKy = self.dK(self.X, self.X, i, identical=True)
+        dKstar = self.dKdi(X1, self.X, i, identical=False)
+        dKy = self.dKdi(self.X, self.X, i, identical=True)
 
         dKyinv = -np.dot(self.Kinv, np.dot(dKy, self.Kinv))
 
@@ -727,12 +763,70 @@ class GP(object):
         dmean = np.dot(d_Kstar_Kyinv, self.y)
 
         #Kss = self.kernel(X1, X1)
-        dKss = self.dK(X1, X1, i, identical=True)
+        dKss = self.dKdi(X1, X1, i, identical=True)
 
         dqf = np.dot(d_Kstar_Kyinv, Kstar.T) + np.dot(Kstar_Kyinv, dKstar.T)
         dcov = dKss - dqf
 
         return dmean, dcov
+
+    def grad_prediction_wrt_source_x(self, cond, p, i):
+        # ONLY WORKS for zero-mean dense GPs with no inducing points or parametric components
+        X1 = self.standardize_input_array(cond).astype(np.float)
+        n_main_params = len(self.cov_main.flatten())
+        nparams = 1 + n_main_params
+
+        # can share Kstar over different vals of p, i
+        Kstar = self.kernel(X1, self.X)
+        Kstar_Kyinv = np.dot(Kstar, self.Kinv)
+
+        dKstar = self.dKdx(self.X, p, i, X1).T
+
+        # does not depend on X1: can be precomputed
+        # also lots of computation can be shared because only one row(/col) of dKy and dKstar should be nonzero
+        dKy = self.dKdx(self.X, p, i)
+        dKyinv = -np.dot(self.Kinv, np.dot(dKy, self.Kinv))
+
+        d_Kstar_Kyinv = np.dot(Kstar, dKyinv) + np.dot(dKstar, self.Kinv)
+
+        dm = np.dot(d_Kstar_Kyinv, self.y)
+        dqf = np.dot(d_Kstar_Kyinv, Kstar.T) + np.dot(Kstar_Kyinv, dKstar.T)
+        dc =  -dqf
+
+        return dm, dc
+
+    def grad_prediction_wrt_target_x(self, cond, p, i):
+        # ONLY WORKS for zero-mean dense GPs with no inducing points or parametric components
+        X1 = self.standardize_input_array(cond).astype(np.float)
+
+        n_main_params = len(self.cov_main.flatten())
+        nparams = 1 + n_main_params
+
+        # can be shared over p, i
+        Kstar = self.kernel(X1, self.X)
+        Kss = self.kernel(X1, X1, identical=True)
+
+        dKss = self.dKdx(X1, p, i)
+        dKstar = self.dKdx(X1, p, i, X2=self.X)
+
+        dm = np.dot(dKstar, self.alpha_r)
+        dqf = np.dot(dKstar, np.dot(self.Kinv, Kstar.T))
+        dc = dKss - dqf - dqf.T
+
+        return dm, dc
+
+    def grad_ll_wrt_X(self):
+        # ONLY WORKS for zero-mean dense GPs with no inducing points or parametric components
+        n, d = self.X.shape
+        llgrad = np.zeros((n, d))
+
+        for p in range(n):
+            for i in range(d):
+                dc = self.dKdx(self.X, p, i)
+                llgrad[p, i] = dgaussian(self.y, self.Kinv, dc)
+
+        return llgrad
+
 
     def kernel(self, X1, X2, identical=False, predict_tree=None):
         predict_tree = self.predict_tree if predict_tree is None else predict_tree
