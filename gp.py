@@ -120,14 +120,42 @@ def dgaussian(r, prec, dcov, dmean=None):
     # derivative of gaussian likelihood wrt derivatives of the mean, cov matrices
     r = r.reshape((-1, 1))
 
-    dprec = -np.dot(prec, np.dot(dcov, prec))
-    dll_dcov = -.5*np.dot(r.T, np.dot(dprec, r))
+    #dprec = -np.dot(prec, np.dot(dcov, prec))
+
+    dprec_r = -np.dot(prec, np.dot(dcov, np.dot(prec, r)))
+
+    dll_dcov = -.5*np.dot(r.T, dprec_r)
+    #dll_dcov -= .5*np.trace(np.dot(prec, dcov))
     dll_dcov -= .5*np.trace(np.dot(prec, dcov))
     dll = dll_dcov
 
     if dmean is not None:
         dmean = dmean.reshape((-1, 1))
         dll_dmean = np.dot(r.T, np.dot(prec, dmean))
+        dll += dll_dmean
+
+    return dll
+
+def dgaussian_rank1(r, alpha, prec, dcov_v, p, dmean=None):
+    # derivative of gaussian likelihood wrt a rank-1 update
+    # in the cov matrix, where dcov_v is the change in the p'th
+    # row and column of the cov matrix (and assume dcov_v[p]=0 for symmetry).
+    # Also optionally dmean is a scalar, the change in the p'th entry of the mean vector
+
+    r = r.reshape((-1, 1))
+
+
+    #t1 = -np.dot(prec, dcov)
+
+    t1 = -np.outer(prec[p,:], dcov_v)
+    t1[:, p] = -np.dot(prec, dcov_v)
+
+    dll_dcov = -.5*np.dot(r.T, np.dot(t1, alpha))
+    dll_dcov += .5*np.trace(t1)
+    dll = dll_dcov
+
+    if dmean is not None:
+        dll_dmean = np.dot(r.T, dmean * prec[:, p])
         dll += dll_dmean
 
     return dll
@@ -721,7 +749,7 @@ class GP(object):
             dKdi = self.predict_tree.kernel_deriv_wrt_i(X1, X2, i-2, 1 if identical else 0, dc)
         return dKdi
 
-    def dKdx(self, X1, p, i, X2=None):
+    def dKdx(self, X1, p, i, X2=None, return_vec=False):
         # derivative of kernel(X1, X2) wrt i'th coordinate of p'th point in X1.
         if X2 is None:
             # consider k(X1, X1)
@@ -733,9 +761,14 @@ class GP(object):
             dK[p,:] = kp
             dK[:,p] = kp
             """
-            dK = self.predict_tree.kernel_deriv_wrt_xi(X1, X1, p, i)
-            dK += dK.T
-            dK[p,p] = 0
+            if return_vec:
+                dKv = self.predict_tree.kernel_deriv_wrt_xi_row(X1, p, i)
+                dKv[p] = 0
+                return dKv
+            else:
+                dK = self.predict_tree.kernel_deriv_wrt_xi(X1, X1, p, i)
+                dK[p,p] = 0
+                dK = dK + dK.T
         else:
             dK = self.predict_tree.kernel_deriv_wrt_xi(X1, X2, p, i)
         return dK
@@ -806,8 +839,11 @@ class GP(object):
         Kstar = self.kernel(X1, self.X)
         Kss = self.kernel(X1, X1, identical=True)
 
+        # both of these are rank-1
         dKss = self.dKdx(X1, p, i)
         dKstar = self.dKdx(X1, p, i, X2=self.X)
+
+
 
         dm = np.dot(dKstar, self.alpha_r)
         dqf = np.dot(dKstar, np.dot(self.Kinv, Kstar.T))
@@ -822,8 +858,12 @@ class GP(object):
 
         for p in range(n):
             for i in range(d):
-                dc = self.dKdx(self.X, p, i)
-                llgrad[p, i] = dgaussian(self.y, self.Kinv, dc)
+
+                #dc = self.dKdx(self.X, p, i)
+                #llgrad2 = dgaussian(self.y, self.Kinv, dc)
+
+                dcv = self.dKdx(self.X, p, i, return_vec=True)
+                llgrad[p,i] = dgaussian_rank1(self.y, self.alpha_r, self.Kinv, dcv, p)
 
         return llgrad
 
