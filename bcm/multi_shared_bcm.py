@@ -107,6 +107,69 @@ def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01,
 
     return X, Y, cov
 
+def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
+    # sample data from the prior
+    np.random.seed(seed)
+    X = np.random.rand(n, xd)
+
+    SX, perm, block_boundaries = blocker.sort_by_block(X)
+    cov = GPCov(wfn_params=[1.0], dfn_params=[lscale, lscale], dfn_str="euclidean", wfn_str="se")
+
+    Y = []
+    Ks = []
+    Js = []
+    Kstar_prec = [] # (i,j) is K_{ij} * K_jj^{-1}
+    covs = [] # (i,j) is K_ii - K_{ij} K_jj^{-1} K_{ji}
+    combined_covs = [] # [i] is the covariance of p(Y_i |_B Y_:i), i.e. the covariance of the BCM conditional
+    combined_chol = [] # cholesky decompositions of combined_covs
+    for i, (i_start, i_end) in enumerate(block_boundaries):
+        Xi = SX[i_start:i_end, :]
+        Ki = mcov(Xi, cov, noise_var)
+        Ji = np.linalg.inv(Ki)
+        
+        precs = []
+        Ksprecs_j = []
+        covs_j = []
+        for j, (j_start, j_end) in enumerate(block_boundaries[:i]):
+            Xi = SX[j_start:j_end, :]
+            Kj = Ks[j]
+            Jj = Js[j]
+            Kstar = mcov(Xi, cov, noise_var, X2=Xj)
+            Kstar_prec = np.dot(Kstar, Jj)
+            pred_cov = Ki - np.dot(Kstar_prec, Kstar.T)
+            pred_prec = np.linalg.inv(pred_cov)
+            message_prec = pred_prec - Ji
+            precs.append(message_prec)
+
+            covs_j.append(pred_cov)
+            Ksprecs_j.append(Kstar_prec)
+
+        covs.append(covs_j)
+        Kstar_prec.append(Ksprecs_j)
+
+        combined_prec = np.sum(precs, axis=0) + Ji
+        combined_cov = np.linalg.inv(combined_prec)
+        combined_chol = np.linalg.cholesky(combined_cov)
+        combined_covs.append(combined_cov)
+        combined_chols.append(combined_chol)
+
+    Y = []
+    for d in range(yd):
+        yis = []
+        for i, (i_start, i_end) in enumerate(block_boundaries):
+            means = [np.zeros((i_end-i_start,))]
+            for j, (j_start, j_end) in enumerate(block_boundaries[:i]):
+                pred_mean = np.dot(Kstar_prec[i][j], yis[j])
+                weighted_mean = np.dot(pred_cov[i][j], pred_mean)
+                means.append(weighted_mean)
+            mean = np.dot(combined_cov[i],  np.sum(means, axis=0))
+            yi = np.dot(combined_chol[i], np.random.randn(i_end-i_start)) + mean
+            yis.append(yi)
+        Yd = np.concatenate(yis).reshape((-1, 1))
+        Y.append(Yd)
+    Y = np.hstack(Y)
+
+    return X, Y, cov
 
 
 class MultiSharedBCM(object):
@@ -165,6 +228,8 @@ class MultiSharedBCM(object):
             pool = Pool(processes=8)
             unary_args = [(kwargs, self, i) for i in range(self.n_blocks)]
             unaries = pool.map(llgrad_unary_shim, unary_args)
+            pool.close()
+            pool.join()
         else:
             unaries = [self.llgrad_unary(i, **kwargs) for i in range(self.n_blocks)]
 
@@ -202,6 +267,8 @@ class MultiSharedBCM(object):
 
             pair_args = [(kwargs, self, i, j) for (i,j) in neighbors]
             pairs = pool.map(llgrad_joint_shim, pair_args)
+            pool.close()
+            pool.join()
         else:
             unaries = [self.llgrad_unary(i, **kwargs) for i in range(self.n_blocks)]
             pairs = [self.llgrad_joint(i, j, **kwargs) for (i,j) in neighbors]
