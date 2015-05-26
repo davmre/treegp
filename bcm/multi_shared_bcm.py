@@ -162,7 +162,7 @@ class MultiSharedBCM(object):
         Compute likelihood under a model with blocked local GPs (no pairwise corrections)
         """
         if parallel:
-            pool = Pool(processes=4)
+            pool = Pool(processes=8)
             unary_args = [(kwargs, self, i) for i in range(self.n_blocks)]
             unaries = pool.map(llgrad_unary_shim, unary_args)
         else:
@@ -196,7 +196,7 @@ class MultiSharedBCM(object):
             neighbor_count = dict([(i, self.n_blocks-1) for i in range(self.n_blocks)])
 
         if parallel:
-            #pool = Pool(processes=4)
+            pool = Pool(processes=8)
             unary_args = [(kwargs, self, i) for i in range(self.n_blocks)]
             unaries = pool.map(llgrad_unary_shim, unary_args)
 

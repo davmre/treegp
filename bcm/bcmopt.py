@@ -93,7 +93,7 @@ class SampledData(object):
         return self.X_obs + np.random.randn(*self.X_obs.shape)*jitter_std
 
 
-llgrad_bcm = lambda mbcm : mbcm.llgrad(local=True, grad_X=True)
+llgrad_bcm = lambda mbcm : mbcm.llgrad(local=True, grad_X=True, parallel=True)
 llgrad_lgp = lambda mbcm : mbcm.llgrad_blocked(grad_X=True)
 llgrad_gp = lambda mbcm : mbcm.llgrad(grad_X=True)
 
@@ -142,9 +142,9 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
     with open(os.path.join(d, "results.txt"), 'w') as f:
         f.write("optimized in %.2f seconds\n" % (t1-t0))
         f.write("MAD error %.04f to %.04f\n" % (sdata.mean_abs_err(x0), sdata.mean_abs_err(r.x)))
-        f.write("GP predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_gp(x0),
-                                                                         sdata.prediction_error_gp(r.x),
-                                                                         sdata.prediction_error_gp(sdata.SX.flatten())))
+        #f.write("GP predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_gp(x0),
+        #                                                                 sdata.prediction_error_gp(r.x),
+        #                                                                 sdata.prediction_error_gp(sdata.SX.flatten())))
         f.write("BCM predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_bcm(x0),
                                                                           sdata.prediction_error_bcm(r.x),
                                                                           sdata.prediction_error_bcm(sdata.SX.flatten())))
@@ -271,5 +271,12 @@ if __name__ == "__main__":
     inits =int(sys.argv[6])
     fullgp = sys.argv[7].startswith('t')
 
+    try:
+        sdata_fname = sys.argv[8]
+        with open(sdata_fname, 'rb') as f:
+            sdata = pickle.load(f)
+    except IndexError:
+        sdata = None
+
     run_name = "%d_%d_%.2f_%d_%s_%d_%s" % (ntrain, n, lscale, yd, method, inits, fullgp)
-    do_run(run_name=run_name, lscale=lscale, n=n, ntrain=ntrain, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=True)
+    do_run(run_name=run_name, lscale=lscale, n=n, ntrain=ntrain, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=True, old_sdata=sdata)
