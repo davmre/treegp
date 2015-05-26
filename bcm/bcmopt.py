@@ -171,7 +171,7 @@ def do_run(run_name, lscale, n, ntrain, yd, old_sdata=None,
 
     data = SampledData(noise_var=0.01, n=n,
                        ntrain=ntrain, lscale=lscale,
-                       obs_std=lscale/5, yd=yd,
+                       obs_std=lscale/10, yd=yd,
                        centers=centers,
                        old_sdata=old_sdata,
                        samplebcm=samplebcm)

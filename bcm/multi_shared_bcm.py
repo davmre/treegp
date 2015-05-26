@@ -105,9 +105,13 @@ def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01,
         Y.append(Yd)
     Y = np.hstack(Y)
 
+    perm = np.random.permutation(n)
+    X = X[perm]
+    y = y[perm]
+
     return X, Y, cov
 
-def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
+def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
     # sample data from the prior
     np.random.seed(seed)
     X = np.random.rand(n, xd)
@@ -168,6 +172,11 @@ def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01,
         Yd = np.concatenate(yis).reshape((-1, 1))
         Y.append(Yd)
     Y = np.hstack(Y)
+
+    perm = np.random.permutation(n)
+    X = X[perm]
+    y = y[perm]
+
 
     return X, Y, cov
 
