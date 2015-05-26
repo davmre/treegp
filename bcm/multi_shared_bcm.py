@@ -107,7 +107,7 @@ def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01,
 
     perm = np.random.permutation(n)
     X = X[perm]
-    y = y[perm]
+    Y = Y[perm]
 
     return X, Y, cov
 
@@ -122,20 +122,23 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
     Y = []
     Ks = []
     Js = []
-    Kstar_prec = [] # (i,j) is K_{ij} * K_jj^{-1}
-    covs = [] # (i,j) is K_ii - K_{ij} K_jj^{-1} K_{ji}
+    Kstar_precs = [] # (i,j) is K_{ij} * K_jj^{-1}
+    pred_precs = [] # (i,j) is inv(K_ii - K_{ij} K_jj^{-1} K_{ji})
     combined_covs = [] # [i] is the covariance of p(Y_i |_B Y_:i), i.e. the covariance of the BCM conditional
-    combined_chol = [] # cholesky decompositions of combined_covs
+    combined_chols = [] # cholesky decompositions of combined_covs
     for i, (i_start, i_end) in enumerate(block_boundaries):
         Xi = SX[i_start:i_end, :]
         Ki = mcov(Xi, cov, noise_var)
         Ji = np.linalg.inv(Ki)
-        
+
+        Ks.append(Ki)
+        Js.append(Ji)
+
         precs = []
         Ksprecs_j = []
-        covs_j = []
+        pprecs_j = []
         for j, (j_start, j_end) in enumerate(block_boundaries[:i]):
-            Xi = SX[j_start:j_end, :]
+            Xj = SX[j_start:j_end, :]
             Kj = Ks[j]
             Jj = Js[j]
             Kstar = mcov(Xi, cov, noise_var, X2=Xj)
@@ -145,40 +148,41 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
             message_prec = pred_prec - Ji
             precs.append(message_prec)
 
-            covs_j.append(pred_cov)
+            pprecs_j.append(pred_prec)
             Ksprecs_j.append(Kstar_prec)
 
-        covs.append(covs_j)
-        Kstar_prec.append(Ksprecs_j)
+        pred_precs.append(pprecs_j)
+        Kstar_precs.append(Ksprecs_j)
 
         combined_prec = np.sum(precs, axis=0) + Ji
         combined_cov = np.linalg.inv(combined_prec)
         combined_chol = np.linalg.cholesky(combined_cov)
         combined_covs.append(combined_cov)
         combined_chols.append(combined_chol)
-
+        print "precomputed covs for block", i
     Y = []
     for d in range(yd):
         yis = []
         for i, (i_start, i_end) in enumerate(block_boundaries):
             means = [np.zeros((i_end-i_start,))]
             for j, (j_start, j_end) in enumerate(block_boundaries[:i]):
-                pred_mean = np.dot(Kstar_prec[i][j], yis[j])
-                weighted_mean = np.dot(pred_cov[i][j], pred_mean)
+                pred_mean = np.dot(Kstar_precs[i][j], yis[j])
+                weighted_mean = np.dot(pred_precs[i][j], pred_mean)
                 means.append(weighted_mean)
-            mean = np.dot(combined_cov[i],  np.sum(means, axis=0))
-            yi = np.dot(combined_chol[i], np.random.randn(i_end-i_start)) + mean
+            mean = np.dot(combined_covs[i],  np.sum(means, axis=0))
+
+            yi = np.dot(combined_chols[i], np.random.randn(i_end-i_start)) + mean
             yis.append(yi)
+        print "sampled y", d
         Yd = np.concatenate(yis).reshape((-1, 1))
         Y.append(Yd)
     Y = np.hstack(Y)
 
     perm = np.random.permutation(n)
-    X = X[perm]
-    y = y[perm]
+    SX = SX[perm]
+    Y = Y[perm]
 
-
-    return X, Y, cov
+    return SX, Y, cov
 
 
 class MultiSharedBCM(object):
