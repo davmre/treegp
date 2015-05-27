@@ -148,8 +148,12 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
             message_prec = pred_prec - Ji
             precs.append(message_prec)
 
-            pprecs_j.append(pred_prec)
-            Ksprecs_j.append(Kstar_prec)
+            if np.max(np.abs(Kstar_prec)) < 1e-3:
+                pprecs_j.append(None)
+                Ksprecs_j.append(None)
+            else:
+                pprecs_j.append(pred_prec)
+                Ksprecs_j.append(Kstar_prec)
 
         pred_precs.append(pprecs_j)
         Kstar_precs.append(Ksprecs_j)
@@ -166,9 +170,10 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
         for i, (i_start, i_end) in enumerate(block_boundaries):
             means = [np.zeros((i_end-i_start,))]
             for j, (j_start, j_end) in enumerate(block_boundaries[:i]):
-                pred_mean = np.dot(Kstar_precs[i][j], yis[j])
-                weighted_mean = np.dot(pred_precs[i][j], pred_mean)
-                means.append(weighted_mean)
+                if Kstar_precs[i][j] is not None:
+                    pred_mean = np.dot(Kstar_precs[i][j], yis[j])
+                    weighted_mean = np.dot(pred_precs[i][j], pred_mean)
+                    means.append(weighted_mean)
             mean = np.dot(combined_covs[i],  np.sum(means, axis=0))
 
             yi = np.dot(combined_chols[i], np.random.randn(i_end-i_start)) + mean
@@ -187,7 +192,7 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
 
 class MultiSharedBCM(object):
 
-    def __init__(self, X, Y, block_boundaries, cov, noise_var, kernelized=False, dy=None, neighbor_threshold=1e-5):
+    def __init__(self, X, Y, block_boundaries, cov, noise_var, kernelized=False, dy=None, neighbor_threshold=1e-3):
         self.X = X
 
         if kernelized:
@@ -209,7 +214,7 @@ class MultiSharedBCM(object):
         self.compute_neighbors(threshold=neighbor_threshold)
         self.neighbor_threshold = neighbor_threshold
 
-    def compute_neighbors(self, threshold=1e-5):
+    def compute_neighbors(self, threshold=1e-3):
         neighbor_count = defaultdict(int)
         neighbors = []
         for i in range(self.n_blocks):
@@ -238,7 +243,7 @@ class MultiSharedBCM(object):
         Compute likelihood under a model with blocked local GPs (no pairwise corrections)
         """
         if parallel:
-            pool = Pool(processes=8)
+            pool = Pool(processes=4)
             unary_args = [(kwargs, self, i) for i in range(self.n_blocks)]
             unaries = pool.map(llgrad_unary_shim, unary_args)
             pool.close()
@@ -274,7 +279,7 @@ class MultiSharedBCM(object):
             neighbor_count = dict([(i, self.n_blocks-1) for i in range(self.n_blocks)])
 
         if parallel:
-            pool = Pool(processes=8)
+            pool = Pool(processes=4)
             unary_args = [(kwargs, self, i) for i in range(self.n_blocks)]
             unaries = pool.map(llgrad_unary_shim, unary_args)
 

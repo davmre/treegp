@@ -1,4 +1,4 @@
-from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic, sample_synthetic_bcm
+from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic, sample_synthetic_bcm_new
 from treegp.bcm.local_regression import BCM
 
 from treegp.gp import GPCov, GP, mcov, prior_sample, dgaussian
@@ -31,7 +31,7 @@ class SampledData(object):
         else:
             if samplebcm:
                 b = Blocker(centers)
-                Xfull, Yfull, cov = sample_synthetic_bcm(n=n, noise_var=noise_var, yd=yd, lscale=lscale, seed=seed, blocker = b)
+                Xfull, Yfull, cov = sample_synthetic_bcm_new(n=n, noise_var=noise_var, yd=yd, lscale=lscale, seed=seed, blocker = b)
             else:
                 Xfull, Yfull, cov = sample_synthetic(n=n, noise_var=noise_var, yd=yd, lscale=lscale, seed=seed)
             self.cov = cov
@@ -157,21 +157,25 @@ def run_multi(sdata,run_name,  llgrad, nrestarts):
     mbcm = data.build_mbcm()
 
 
-def do_run(run_name, lscale, n, ntrain, yd, old_sdata=None,
-           fullgp=False, restarts=1, method=None, samplebcm=False):
+def do_run(run_name, lscale, n, ntrain, nblocks, yd, old_sdata=None,
+           fullgp=False, restarts=1, method=None, samplebcm=False, obs_std=None):
     if fullgp:
         centers = None
         llgrad=llgrad_gp
     else:
-        pmax = np.ceil(np.sqrt(np.sqrt(ntrain)))*2+1
+        #pmax = np.ceil(np.sqrt(np.sqrt(ntrain)))*2+1
+        pmax = np.ceil(np.sqrt(nblocks))*2+1
         pts = np.linspace(0, 1, pmax)[1::2]
         centers = [np.array((xx, yy)) for xx in pts for yy in pts]
         print "bcm with %d blocks" % (len(centers))
         llgrad=llgrad_bcm
 
+    if obs_std is None:
+        obs_std = lscale/10
+
     data = SampledData(noise_var=0.01, n=n,
                        ntrain=ntrain, lscale=lscale,
-                       obs_std=lscale/10, yd=yd,
+                       obs_std=obs_std, yd=yd,
                        centers=centers,
                        old_sdata=old_sdata,
                        samplebcm=samplebcm)
@@ -265,18 +269,20 @@ def run_experiments():
 if __name__ == "__main__":
     ntrain = int(sys.argv[1])
     n = int(sys.argv[2])
-    lscale = float(sys.argv[3])
-    yd = int(sys.argv[4])
-    method = sys.argv[5]
-    inits =int(sys.argv[6])
-    fullgp = sys.argv[7].startswith('t')
+    nblocks = int(sys.argv[3])
+    lscale = float(sys.argv[4])
+    obs_std = float(sys.argv[5])
+    yd = int(sys.argv[6])
+    method = sys.argv[7]
+    inits =int(sys.argv[8])
+    fullgp = sys.argv[9].startswith('t')
 
     try:
-        sdata_fname = sys.argv[8]
+        sdata_fname = sys.argv[10]
         with open(sdata_fname, 'rb') as f:
             sdata = pickle.load(f)
     except IndexError:
         sdata = None
 
-    run_name = "%d_%d_%.2f_%d_%s_%d_%s" % (ntrain, n, lscale, yd, method, inits, fullgp)
-    do_run(run_name=run_name, lscale=lscale, n=n, ntrain=ntrain, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=True, old_sdata=sdata)
+    run_name = "%d_%d_%d_%.2f_%.3f_%d_%s_%d_%s" % (ntrain, n, nblocks, lscale, obs_std, yd, method, inits, fullgp)
+    do_run(run_name=run_name, lscale=lscale, obs_std=obs_std, n=n, ntrain=ntrain, nblocks=nblocks, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=True, old_sdata=sdata)
