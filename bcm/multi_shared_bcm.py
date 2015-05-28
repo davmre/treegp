@@ -322,10 +322,12 @@ class MultiSharedBCM(object):
             K = self.predict_tree.kernel_matrix(X, X2, False)
         return K
 
-    def dKdx(self, X, p, i, return_vec=False):
+    def dKdx(self, X, p, i, return_vec=False, dKv=None):
         # derivative of kernel(X1, X2) wrt i'th coordinate of p'th point in X1.
         if return_vec:
-            dKv = self.predict_tree.kernel_deriv_wrt_xi_row(X, p, i)
+            if dKv is None:
+                dKv = np.zeros((X.shape[0],), dtype=np.float)
+            self.predict_tree.kernel_deriv_wrt_xi_row(X, p, i, pyublas.why_not(dKv))
             dKv[p] = 0
             return dKv
         else:
@@ -352,23 +354,39 @@ class MultiSharedBCM(object):
             return ll, np.array(())
 
         llgrad = np.zeros((n, dx))
+        dcv = np.zeros((X.shape[0]), dtype=np.float)
+        dK_alpha = np.zeros((X.shape[0]), dtype=np.float)
         for p in range(n):
             for i in range(dx):
                 dll = 0
-                dcv = self.dKdx(X, p, i, return_vec=True)
+                self.dKdx(X, p, i, return_vec=True, dKv=dcv)
                 #t1 = -np.outer(prec[p,:], dcv)
                 #t1[:, p] = -np.dot(prec, dcv)
                 #dll_dcov = .5*ny*np.trace(t1)
-
                 dll = -dy * np.dot(prec[p,:], dcv)
 
+                #dK_Alpha = np.outer(dcv, Alpha[p, :])
+                #dK_Alpha = dcv * Alpha[p, :]
+                #k0 = np.sum(Alpha * dK_Alpha)
+                #rowP = np.dot(dcv, Alpha)
+                #dK_Alpha[p, :] = np.dot(dcv, Alpha)
+                #dll_dcov = .5 * np.sum(Alpha * dK_Alpha)
+                new_rowp= np.dot(dcv.T, Alpha)
+                k1 = np.dot(new_rowp, Alpha[p, :])
+                old_rowp = dcv[p] * Alpha[p, :]
+                k2 = k1 + np.dot(Alpha[p, :], new_rowp-old_rowp)
+                dll_dcov = .5* k2
+
+                dll += dll_dcov
+
+                """
                 for j in range(dy):
                     alpha = Alpha[:,j]
                     dK_alpha = dcv * alpha[p]
                     dK_alpha[p] = np.dot(dcv, alpha)
                     dll_dcov = .5*np.dot(alpha, dK_alpha)
                     dll += dll_dcov
-
+                """
                 llgrad[p,i] = dll
         t1 = time.time()
         #print "llgrad %d pts %.4s" % (n, t1-t0)

@@ -762,7 +762,8 @@ class GP(object):
             dK[:,p] = kp
             """
             if return_vec:
-                dKv = self.predict_tree.kernel_deriv_wrt_xi_row(X1, p, i)
+                dKv = np.zeros((X1.shape[0]))
+                self.predict_tree.kernel_deriv_wrt_xi_row(X1, p, i, dKv)
                 dKv[p] = 0
                 return dKv
             else:

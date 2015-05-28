@@ -436,7 +436,7 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_xi(const pyublas::num
   return K;
 }
 
-pyublas::numpy_vector<double> VectorTree::kernel_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pts1, int i, int k) {
+void VectorTree::kernel_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pts1, int i, int k, pyublas::numpy_vector<double> K) {
   // deriv of kernel matrix with respect to k'th component of the 'ith input point.
   // return just the row/col corresponding to the i'th input point (everything else should be zero)
 
@@ -449,10 +449,10 @@ pyublas::numpy_vector<double> VectorTree::kernel_deriv_wrt_xi_row(const pyublas:
     exit(1);
   }
 
-  pyublas::numpy_vector<double> K(pts1.size1());
-  for (unsigned j = 0; j < pts1.size1 (); ++ j) {
-    K(j) = 0;
-  }
+  // pyublas::numpy_vector<double> K(pts1.size1());
+  //for (unsigned j = 0; j < pts1.size1 (); ++ j) {
+  //K(j) = 0;
+  //}
 
   point p1 = {&pts1(i, 0), 0};
   for (unsigned j = 0; j < pts1.size1 (); ++ j) {
@@ -462,7 +462,6 @@ pyublas::numpy_vector<double> VectorTree::kernel_deriv_wrt_xi_row(const pyublas:
     K(j) = this->dwfn_dr(r, dr_dp1, this->wp);
   }
 
-  return K;
 }
 
 
