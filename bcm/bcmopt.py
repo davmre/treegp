@@ -14,6 +14,8 @@ import cPickle as pickle
 EXP_DIR = os.path.join(os.environ["HOME"], "bcmopt_experiments")
 mkdir_p(EXP_DIR)
 
+MAXSEC=3600
+
 class SampledData(object):
 
     def __init__(self, old_sdata=None,
@@ -47,12 +49,14 @@ class SampledData(object):
             self.block_boundaries = [(0, X.shape[0])]
             self.centers = [np.array((0.0, 0.0))]
 
+
         self.obs_std = obs_std
         self.X_obs = self.SX + np.random.randn(*X.shape)*obs_std
 
-    def build_mbcm(self):
-        mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries, cov=self.cov,
-                              noise_var=self.noise_var, kernelized=False, neighbor_threshold=1e-3)
+    def build_mbcm(self, locality=1e-4):
+        mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries, 
+                              cov=self.cov, noise_var=self.noise_var, 
+                              kernelized=False, neighbor_threshold=locality)
         return mbcm
 
     def mean_abs_err(self, x):
@@ -83,8 +87,14 @@ class SampledData(object):
 
     def x_prior(self, xx):
         flatobs = self.X_obs.flatten()
-        ll = np.sum([scipy.stats.norm(flatobs[i], scale=self.obs_std).logpdf(xx[i]) for i in range(len(xx))])
+        t0 = time.time()
+
+        n = len(xx)
+        r = (xx-flatobs)/self.obs_std
+        ll = -.5*np.sum( r**2)- .5 *n * np.log(2*np.pi*self.obs_std**2)
+
         lderiv = np.array([-(xx[i]-flatobs[i])/(self.obs_std**2) for i in range(len(xx))]).flatten()
+        t1 = time.time()
         return ll, lderiv
 
     def random_init(self, jitter_std=None):
@@ -93,7 +103,7 @@ class SampledData(object):
         return self.X_obs + np.random.randn(*self.X_obs.shape)*jitter_std
 
 
-llgrad_bcm = lambda mbcm : mbcm.llgrad(local=True, grad_X=True, parallel=True)
+llgrad_bcm = lambda mbcm : mbcm.llgrad(local=True, grad_X=True, parallel=False)
 llgrad_lgp = lambda mbcm : mbcm.llgrad_blocked(grad_X=True)
 llgrad_gp = lambda mbcm : mbcm.llgrad(grad_X=True)
 
@@ -102,7 +112,7 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
     x0 = X0.flatten()
 
     sstep = [0,]
-    d = EXP_DIR + run_name
+    d = os.path.join(EXP_DIR, run_name)
     mkdir_p(d)
 
     with open(os.path.join(d, "data.pkl"), 'wb') as f:
@@ -126,27 +136,37 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
         f_log.write("%d %.2f %.2f\n" % (sstep[0], time.time()-t0, ll))
         f_log.flush()
 
-        np.save(os.path.join(d, "step_%05d" % sstep[0]), XX)
+        np.save(os.path.join(d, "step_%05d.npy" % sstep[0]), XX)
         sstep[0] += 1
+
+        if time.time()-t0 > MAXSEC:
+            raise ValueError
 
         return -ll, -grad
 
     bounds = [(0.0, 1.0),]*len(x0)
-    r = scipy.optimize.minimize(lgpllgrad, x0, jac=True, method=method, bounds=bounds, options={'maxiter': maxiter})
+    try:
+        r = scipy.optimize.minimize(lgpllgrad, x0, jac=True, method=method, bounds=bounds, options={'maxiter': maxiter})
+        rx = r.x
+    except ValueError:
+        print "terminated optimization for time"
+        r = "optimization terminated after %.1fs" % (time.time()-t0)
+        rx = np.load(os.path.join(d, "step_%05d.npy" % (sstep[0]-1))).flatten()
     t1 = time.time()
 
-    np.save(os.path.join(d, "step_final"), r.x.reshape(X0.shape))
+    np.save(os.path.join(d, "step_final"), rx.reshape(X0.shape))
 
     f_log.close()
 
     with open(os.path.join(d, "results.txt"), 'w') as f:
         f.write("optimized in %.2f seconds\n" % (t1-t0))
-        f.write("MAD error %.04f to %.04f\n" % (sdata.mean_abs_err(x0), sdata.mean_abs_err(r.x)))
-        #f.write("GP predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_gp(x0),
-        #                                                                 sdata.prediction_error_gp(r.x),
-        #                                                                 sdata.prediction_error_gp(sdata.SX.flatten())))
-        f.write("BCM predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_bcm(x0),
-                                                                          sdata.prediction_error_bcm(r.x),
+        f.write("MAD error %.04f to %.04f\n" % (sdata.mean_abs_err(x0), sdata.mean_abs_err(rx)))
+        if X0.shape[0] < 1000:
+            f.write("GP predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_gp(x0),
+                                                                             sdata.prediction_error_gp(rx),
+                                                                             sdata.prediction_error_gp(sdata.SX.flatten())))
+            f.write("BCM predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_bcm(x0),
+                                                                          sdata.prediction_error_bcm(rx),
                                                                           sdata.prediction_error_bcm(sdata.SX.flatten())))
         f.write("\n\nresult:\n")
         f.write(str(r))
@@ -158,7 +178,8 @@ def run_multi(sdata,run_name,  llgrad, nrestarts):
 
 
 def do_run(run_name, lscale, n, ntrain, nblocks, yd, old_sdata=None,
-           fullgp=False, restarts=1, method=None, samplebcm=False, obs_std=None):
+           fullgp=False, restarts=1, method=None, 
+           samplebcm=False, obs_std=None, locality=1e-4):
     if fullgp:
         centers = None
         llgrad=llgrad_gp
@@ -179,11 +200,16 @@ def do_run(run_name, lscale, n, ntrain, nblocks, yd, old_sdata=None,
                        centers=centers,
                        old_sdata=old_sdata,
                        samplebcm=samplebcm)
-    mbcm = data.build_mbcm()
+    mbcm = data.build_mbcm(locality=locality)
+    print mbcm.n_blocks
 
-    for i in range(restarts):
-        X0 = data.random_init()
-        do_optimization(llgrad, mbcm, "%s_init%02d" % (run_name, i), X0, data, method=method)
+    if restarts==1:
+        X0 = data.X_obs
+        do_optimization(llgrad, mbcm, "%s_init00" % (run_name), X0, data, method=method)
+    else:
+        for i in range(restarts):
+            X0 = data.random_init()
+            do_optimization(llgrad, mbcm, "%s_init%02d" % (run_name, i), X0, data, method=method)
 
 def savesample(run_name, n, ntrain, lscale, yd):
     data = SampledData(noise_var=0.01, n=n,
@@ -191,79 +217,12 @@ def savesample(run_name, n, ntrain, lscale, yd):
                        obs_std=0.05, yd=30,
                        centers=centers)
 
-    d = EXP_DIR + run_name
+    d = os.path.join(EXP_DIR, run_name)
     with open(os.path.join(d, "data.pkl"), 'rb') as f:
         old_sdata = pickle.dump(data, f)
 
 
-def main():
 
-
-
-    pts = np.linspace(0, 1, 9)[1::2]
-    centers = [np.array((xx, yy)) for xx in pts for yy in pts]
-    #centers = [np.array((0.5, 0.5))]
-    #centers = None
-
-    #data = SampledData(noise_var=0.01, n=4200,
-    #                   ntrain=4000, lscale=0.02,
-    #                   obs_std=0.05, yd=30,
-    #                   centers=centers)
-    run_name = "low_lscale_4k"
-    d = EXP_DIR + run_name
-    with open(os.path.join(d, "data.pkl"), 'rb') as f:
-        old_sdata = pickle.load(f)
-
-    data = SampledData(old_sdata,
-                       noise_var=0.01, n=4200,
-                       ntrain=4000, lscale=0.02,
-                       obs_std=0.05, yd=30,
-                       centers=centers)
-    mbcm = data.build_mbcm()
-
-    X0 = data.X_obs.copy()
-    do_optimization(llgrad_bcm, mbcm, run_name, X0, data, method="l-bfgs-b")
-
-
-def run_experiments():
-    """
-    experiments = [ (False, 400, 500, 0.05, 50, 'tnc', 3),
-                    (False, 400, 500, 0.05, 5, 'l-bfgs-b', 3),
-                   (False, 400, 500, 0.05, 10, 'l-bfgs-b', 3),
-                   (False, 400, 500, 0.05, 50, 'l-bfgs-b', 3),
-
-                   (True, 400, 500, 0.05, 5, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.05, 10, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.05, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.05, 50, 'tnc', 3),
-                   (True, 400, 500, 0.1, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.5, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.01, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.1, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.5, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.01, 50, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 5, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 10, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 50, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 50, 'tnc', 3)]"""
-    experiments = [(True, 400, 500, 0.5, 50, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.5, 10, 'l-bfgs-b', 3),
-                   (True, 400, 500, 0.5, 5, 'l-bfgs-b', 3),
-                   (False, 400, 500, 0.5, 50, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 5, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 10, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 50, 'l-bfgs-b', 3),
-                   (False, 5000, 5200, 0.02, 50, 'tnc', 3),
-                   (False, 5000, 5200, 0.05, 50, 'l-bfgs-b', 3)]
-
-    for (fullgp, ntrain, n, lscale, yd, method, inits) in experiments:
-        run_name = "%d_%d_%.2f_%d_%s_%d_%s" % (ntrain, n, lscale, yd, method, inits, fullgp)
-        print "running", run_name
-        try:
-            do_run(run_name=run_name, lscale=lscale, n=n, ntrain=ntrain, yd=yd, fullgp=fullgp, restarts=inits, method=method)
-        except Exception as e:
-            print e
-            continue
 
 
 if __name__ == "__main__":
@@ -272,17 +231,20 @@ if __name__ == "__main__":
     nblocks = int(sys.argv[3])
     lscale = float(sys.argv[4])
     obs_std = float(sys.argv[5])
-    yd = int(sys.argv[6])
-    method = sys.argv[7]
-    inits =int(sys.argv[8])
-    fullgp = sys.argv[9].startswith('t')
+    locality = float(sys.argv[6])
+    yd = int(sys.argv[7])
+    method = sys.argv[8]
+    inits =int(sys.argv[9])
+    fullgp = sys.argv[10].startswith('t')
 
     try:
-        sdata_fname = sys.argv[10]
+        sdata_fname = sys.argv[11]
         with open(sdata_fname, 'rb') as f:
             sdata = pickle.load(f)
     except IndexError:
         sdata = None
 
-    run_name = "%d_%d_%d_%.2f_%.3f_%d_%s_%d_%s" % (ntrain, n, nblocks, lscale, obs_std, yd, method, inits, fullgp)
-    do_run(run_name=run_name, lscale=lscale, obs_std=obs_std, n=n, ntrain=ntrain, nblocks=nblocks, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=True, old_sdata=sdata)
+    run_name = "%d_%d_%d_%.2f_%.3f_%.5f_%d_%s_%d_%s" % (ntrain, n, nblocks, lscale, obs_std, locality, yd, method, inits, fullgp)
+    d = os.path.join(EXP_DIR, run_name + "_init00")
+    print os.path.join(d, "data.pkl")
+    do_run(run_name=run_name, lscale=lscale, obs_std=obs_std, locality=locality, n=n, ntrain=ntrain, nblocks=nblocks, yd=yd, fullgp=fullgp, restarts=inits, method=method, samplebcm=False, old_sdata=sdata)

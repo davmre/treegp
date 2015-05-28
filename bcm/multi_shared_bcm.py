@@ -58,59 +58,6 @@ def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):
 
     return X, y, cov
 
-def sample_synthetic_bcm(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
-    # sample data from the prior
-    np.random.seed(seed)
-    X = np.random.rand(n, xd)
-
-    SX, perm, block_boundaries = blocker.sort_by_block(X)
-    cov = GPCov(wfn_params=[1.0], dfn_params=[lscale, lscale], dfn_str="euclidean", wfn_str="se")
-
-    Y = []
-    for d in range(yd):
-        gps = []
-        yis = []
-        for block, (i_start, i_end) in enumerate(block_boundaries):
-            Xi = SX[i_start:i_end, :]
-            Ki = mcov(Xi, cov, noise_var)
-
-            means = [gp.predict(Xi) for gp in gps]
-            covs = [gp.covariance(Xi, include_obs=True) for gp in gps]
-            precs = [np.linalg.inv(ccov) for ccov in covs]
-            combined_prec = np.sum(precs, axis=0)
-
-            target_prior_cov = mcov(Xi, cov, noise_var)
-            target_prior_prec = np.linalg.inv(target_prior_cov)
-            prior_covs = [mcov(Xi, lgp.cov_main, lgp.noise_var) for lgp in gps]
-            prior_precs = [np.linalg.inv(ccov) for ccov in prior_covs]
-            combined_prec += target_prior_prec
-            combined_prec -= np.sum(prior_precs, axis=0)
-            ccov = np.linalg.inv(combined_prec)
-
-            weighted_means = [np.dot(prec, mean) for (mean, prec) in zip(means, precs)]
-            if len(weighted_means) > 0:
-                mean = np.dot(ccov, np.sum(weighted_means, axis=0))
-            else:
-                mean = np.zeros((ccov.shape[0],))
-
-            yi = scipy.stats.multivariate_normal(mean=mean, cov=ccov).rvs(1)
-
-            ngp = GP(X=Xi, y=yi, cov_main=cov, noise_var=noise_var, sort_events=False,
-                     sparse_invert=False, compute_ll=False)
-            gps.append(ngp)
-            yis.append(yi)
-            print "  sampled block", block
-        Yd = np.concatenate(yis).reshape((-1, 1))
-        print "sampled all blocks for dimension", d
-        Y.append(Yd)
-    Y = np.hstack(Y)
-
-    perm = np.random.permutation(n)
-    X = X[perm]
-    Y = Y[perm]
-
-    return X, Y, cov
-
 def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
     # sample data from the prior
     np.random.seed(seed)
@@ -288,8 +235,15 @@ class MultiSharedBCM(object):
             pool.close()
             pool.join()
         else:
+            t0 = time.time()
             unaries = [self.llgrad_unary(i, **kwargs) for i in range(self.n_blocks)]
+            t1 = time.time()
+            print self.n_blocks, "unaries in", t1-t0, "seconds"
             pairs = [self.llgrad_joint(i, j, **kwargs) for (i,j) in neighbors]
+            t2 = time.time()
+            print len(neighbors), "pairs in", t2-t1, "seconds"
+
+        t0 = time.time()
 
         unary_lls, unary_grads = zip(*unaries)
         if len(pairs) > 0:
@@ -317,6 +271,10 @@ class MultiSharedBCM(object):
             ni = i_end-i_start
             grads[i_start:i_end] += pair_grads[pair_idx][:ni]
             grads[j_start:j_end] += pair_grads[pair_idx][ni:]
+
+        t1 = time.time()
+
+
         return ll, grads
 
 
@@ -377,6 +335,8 @@ class MultiSharedBCM(object):
             return dK
 
     def gaussian_llgrad(self, X, Y, grad_X = False):
+
+        t0 = time.time()
         n, dx = X.shape
         dy = Y.shape[1]
 
@@ -410,7 +370,8 @@ class MultiSharedBCM(object):
                     dll += dll_dcov
 
                 llgrad[p,i] = dll
-
+        t1 = time.time()
+        #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, llgrad
 
     def gaussian_llgrad_kernel(self, X, YY, dy=None, grad_X=False):
