@@ -12,7 +12,7 @@ try:
 except:
     pass
 
-from treegp.gp import GP, GPCov, mcov, dgaussian, dgaussian_rank1
+from treegp.gp import GP, GPCov, mcov,  prior_sample
 
 from treegp.cover_tree import VectorTree
 import pyublas
@@ -66,13 +66,33 @@ def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):
 
     return X, y, cov
 
-def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None):
+def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None, nonstationary_hparam_covs = None):
     # sample data from the prior
     np.random.seed(seed)
     X = np.random.rand(n, xd)
 
     SX, perm, block_boundaries = blocker.sort_by_block(X)
-    cov = GPCov(wfn_params=[1.0], dfn_params=[lscale, lscale], dfn_str="euclidean", wfn_str="se")
+
+    if nonstationary_hparam_covs is not None:
+        centers = np.array(blocker.block_centers)
+        n_blocks = centers.shape[0]
+
+        nvmean, nvcov = nonstationary_hparam_covs["noise_var"]
+        block_nv = np.exp(prior_sample(centers, nvcov, 0.0) + nvmean)
+
+        svmean, svcov = nonstationary_hparam_covs["signal_var"]
+        block_sv = np.exp(prior_sample(centers, svcov, 0.0) + svmean)
+
+        lsmean, lscov = nonstationary_hparam_covs["lscale"]
+        block_lscale = np.exp(prior_sample(centers, lscov, 0.0)+ lsmean)
+
+        print "noise levels", block_nv
+        print "signal levels", block_sv
+        print "lscale", block_lscale
+
+        covs = [GPCov(wfn_params=[block_sv[i]], dfn_params=[block_lscale[i],] * xd, dfn_str="euclidean", wfn_str="se") for i in range(n_blocks)]
+    else:
+        cov = GPCov(wfn_params=[1.0], dfn_params=[lscale,] * xd, dfn_str="euclidean", wfn_str="se")
 
     Y = []
     Ks = []
@@ -82,6 +102,10 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
     combined_covs = [] # [i] is the covariance of p(Y_i |_B Y_:i), i.e. the covariance of the BCM conditional
     combined_chols = [] # cholesky decompositions of combined_covs
     for i, (i_start, i_end) in enumerate(block_boundaries):
+        if nonstationary_hparam_covs is not None:
+            cov = covs[i]
+            noise_var = block_nv[i]
+
         Xi = SX[i_start:i_end, :]
         Ki = mcov(Xi, cov, noise_var)
         Ji = np.linalg.inv(Ki)
@@ -96,11 +120,26 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
             Xj = SX[j_start:j_end, :]
             Kj = Ks[j]
             Jj = Js[j]
-            Kstar = mcov(Xi, cov, noise_var, X2=Xj)
+
+            if nonstationary_hparam_covs is not None:
+                cov_j = covs[j]
+            else:
+                cov_j = cov
+
+            Kstar = mcov(Xi, cov_j, noise_var, X2=Xj)
             Kstar_prec = np.dot(Kstar, Jj)
-            pred_cov = Ki - np.dot(Kstar_prec, Kstar.T)
-            pred_prec = np.linalg.inv(pred_cov)
-            message_prec = pred_prec - Ji
+
+            if nonstationary_hparam_covs is None:
+                pred_cov = Ki - np.dot(Kstar_prec, Kstar.T)
+                pred_prec = np.linalg.inv(pred_cov)
+                message_prec = pred_prec - Ji
+            else:
+                Kij = mcov(Xi, cov_j, block_nv[j])
+                Jij = np.linalg.inv(Kij)
+                pred_cov = Kij - np.dot(Kstar_prec, Kstar.T)
+                pred_prec = np.linalg.inv(pred_cov)
+                message_prec = pred_prec - Jij
+
             precs.append(message_prec)
 
             if np.max(np.abs(Kstar_prec)) < 1e-3:
@@ -142,7 +181,10 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
     SX = SX[perm]
     Y = Y[perm]
 
-    return SX, Y, cov
+    if nonstationary_hparam_covs is None:
+        return SX, Y, cov
+    else:
+        return SX, Y, cov, block_nv, block_sv, block_lscale
 
 def pair_distances(Xi, Xj):
     return np.sqrt(np.outer(np.sum(Xi**2, axis=1), np.ones((Xj.shape[0]),)) - 2*np.dot(Xi, Xj.T) + np.outer((np.ones(Xi.shape[0]),), np.sum(Xj**2, axis=1)))
