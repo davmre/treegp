@@ -16,6 +16,9 @@ mkdir_p(EXP_DIR)
 
 MAXSEC=3600
 
+class OutOfTimeError(Exception):
+    pass
+
 class SampledData(object):
 
     def __init__(self, old_sdata=None,
@@ -140,7 +143,7 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
         sstep[0] += 1
 
         if time.time()-t0 > MAXSEC:
-            raise ValueError
+            raise OutOfTimeError
 
         return -ll, -grad
 
@@ -148,7 +151,7 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
     try:
         r = scipy.optimize.minimize(lgpllgrad, x0, jac=True, method=method, bounds=bounds, options={'maxiter': maxiter})
         rx = r.x
-    except ValueError:
+    except OutOfTimeError:
         print "terminated optimization for time"
         r = "optimization terminated after %.1fs" % (time.time()-t0)
         rx = np.load(os.path.join(d, "step_%05d.npy" % (sstep[0]-1))).flatten()
