@@ -54,8 +54,8 @@ class SampledData(object):
         self.X_obs = self.SX + np.random.randn(*X.shape)*obs_std
 
     def build_mbcm(self, locality=1e-4):
-        mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries, 
-                              cov=self.cov, noise_var=self.noise_var, 
+        mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries,
+                              cov=self.cov, noise_var=self.noise_var,
                               kernelized=False, neighbor_threshold=locality)
         return mbcm
 
@@ -125,8 +125,8 @@ def do_optimization(llgrad, mbcm, run_name, X0, sdata, method, maxiter=200):
         XX = xx.reshape(X0.shape)
         mbcm.update_X(XX)
         #ll, grad = mbcm.llgrad(local=True, parallel=True, grad_X=True)
-        ll, grad = llgrad(mbcm)
-        grad = grad.flatten()
+        ll, gradX, gradC = llgrad(mbcm)
+        grad = gradX.flatten()
 
         prior_ll, prior_grad = sdata.x_prior(xx)
         ll += prior_ll
@@ -178,7 +178,7 @@ def run_multi(sdata,run_name,  llgrad, nrestarts):
 
 
 def do_run(run_name, lscale, n, ntrain, nblocks, yd, old_sdata=None,
-           fullgp=False, restarts=1, method=None, 
+           fullgp=False, restarts=1, method=None,
            samplebcm=False, obs_std=None, locality=1e-4):
     if fullgp:
         centers = None
