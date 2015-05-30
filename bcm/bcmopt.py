@@ -33,6 +33,7 @@ class SampledData(object):
             self.cov = old_sdata.cov
             self.Xtest, self.Ytest = old_sdata.Xtest, old_sdata.Ytest
             X, Y = old_sdata.SX, old_sdata.SY
+
         else:
             if samplebcm:
                 b = Blocker(centers)
@@ -54,6 +55,7 @@ class SampledData(object):
 
 
         self.obs_std = obs_std
+        np.random.seed(seed)
         self.X_obs = self.SX + np.random.randn(*X.shape)*obs_std
 
     def build_mbcm(self, locality=1e-4):
