@@ -583,10 +583,13 @@ class MultiSharedBCM(object):
         #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, gradX, gradC
 
-    def train_predictor(self, test_cov, Y=None):
+    def train_predictor(self, test_cov=None, Y=None):
 
         if Y is None:
             Y = self.Y
+
+        if test_cov is None:
+            test_cov = self.cov
 
         block_Kinvs = []
         block_Alphas = []

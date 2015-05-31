@@ -66,8 +66,11 @@ class SampledData(object):
         self.centers = centers
         self.X_obs = self.X_obs[self.perm]
 
-    def build_mbcm(self, local_dist=1e-4):
-        mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries,
+    def build_mbcm(self, X=None, local_dist=1e-4):
+        if X is None:
+            X = self.X_obs
+
+        mbcm = MultiSharedBCM(X, Y=self.SY, block_boundaries=self.block_boundaries,
                               cov=self.cov, noise_var=self.noise_var,
                               kernelized=False, neighbor_threshold=local_dist)
         return mbcm
@@ -90,8 +93,9 @@ class SampledData(object):
             gp.y = y
             gp.alpha_r = gp.factor(y)
             pred_means = gp.predict(self.Xtest)
+            rt = yt - pred_means
 
-            lly =  -.5 * np.dot(yt, np.dot(pred_prec, yt))
+            lly =  -.5 * np.dot(rt, np.dot(pred_prec, rt))
             lly += -.5 * logdet
             lly += -.5 * ntest * np.log(2*np.pi)
 
@@ -99,30 +103,21 @@ class SampledData(object):
 
         return ll
 
-    def prediction_error_bcm(self, x, test_cov, local_dist=1.0):
+    def prediction_error_bcm(self, X=None, local_dist=1.0):
         ntest = self.n-self.ntrain
-        mbcm = self.build_mbcm(self, local_dist=local_dist)
+        yd = self.SY.shape[1]
+        mbcm = self.build_mbcm(X=X, local_dist=local_dist)
 
         # TODO: predict with respect to local covs instead of a global test cov
-        p = mbcm.train_predictor(test_cov)
-        PM, PC = p(predict, test_noise_var=self.noise_var)
+        p = mbcm.train_predictor()
+        PM, PC = p(self.Xtest, test_noise_var=self.noise_var)
         PP = np.linalg.inv(PC)
+        PR = self.Ytest-PM
 
-        ll =  -.5 * np.sum(PP, np.dot(PM, PM.T))
+        ll =  -.5 * np.sum(PP *  np.dot(PR, PR.T))
         ll += -.5 * np.linalg.slogdet(PC)[1]
-        ll += -.5 * ntest * self.yd * np.log(2*np.pi)
-        return ll
-
-    def prediction_error_bcm(self, x):
-        XX = x.reshape(self.X_obs.shape)
-        ll = 0
-        for y, yt in zip(self.SY.T, self.Ytest.T):
-            bcm = BCM(block_centers=self.centers, cov_block_params = [(self.noise_var, 1.0, self.lscale, self.lscale)],
-                      X=XX, y=y, test_cov=self.cov)
-            m, c = bcm.predict_dist(self.Xtest, noise_var=self.noise_var)
-            lly = scipy.stats.multivariate_normal(m, c).logpdf(yt)
-            ll += lly
-        return ll
+        ll += -.5 * ntest * yd * np.log(2*np.pi)
+        return ll / (ntest * yd)
 
     def x_prior(self, xx):
         flatobs = self.X_obs.flatten()
@@ -213,25 +208,60 @@ def do_optimization(d, mbcm, X0, C0, sdata, method, maxsec=3600, parallel=False)
     with open(os.path.join(d, "finished"), 'w') as f:
         f.write("")
 
-def analyze_run(n, ntrain, lscale, obs_std, yd, seed):
-    with open(os.path.join(d, "results.txt"), 'w') as f:
-        f.write("optimized in %.2f seconds\n" % (t1-t0))
-        f.write("MAD error %.04f to %.04f\n" % (sdata.mean_abs_err(x0), sdata.mean_abs_err(rx)))
-        if X0.shape[0] < 1000:
-            f.write("GP predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_gp(x0),
-                                                                             sdata.prediction_error_gp(rx),
-                                                                             sdata.prediction_error_gp(sdata.SX.flatten())))
-            f.write("BCM predictive likelihood %.3f to %.3f (true %.3f)\n" % (sdata.prediction_error_bcm(x0),
-                                                                          sdata.prediction_error_bcm(rx),
-                                                                          sdata.prediction_error_bcm(sdata.SX.flatten())))
-        f.write("\n\nresult:\n")
-        f.write(str(r))
-        f.write("\n")
+
+def load_log(d):
+    log = os.path.join(d, "log.txt")
+    steps = []
+    times = []
+    lls = []
+    with open(log, 'r') as lf:
+        for line in lf:
+            try:
+                step, time, ll = line.split(' ')
+                steps.append(int(step))
+                times.append(float(time))
+                lls.append(float(ll))
+            except:
+                continue
+
+    return np.asarray(steps), np.asarray(times), np.asarray(lls)
+
+def analyze_run(d, sdata, local_dist=1.0):
+
+    steps, times, lls = load_log(d)
+
+    rfname = os.path.join(d, "results.txt")
+    results = open(rfname, 'w')
+    print "writing results to", rfname
+    for i, step in enumerate(steps):
+        fname = os.path.join(d, "step_%05d_X.npy" % step)
+        X = np.load(fname)
+        l1 = sdata.mean_abs_err(X.flatten())
+        l2 = sdata.x_prior(X.flatten())[0]
+        p1 = sdata.prediction_error_bcm(X=X, local_dist=1.0)
+        p2 = sdata.prediction_error_bcm(X=X, local_dist=0.05)
+        s = "%d %.2f %.2f %.4f %.4f %.4f %.4f" % (step, times[i], lls[i], l1, l2, p1, p2)
+        print s
+        results.write(s + "\n")
+
+    X = sdata.SX
+    l1 = sdata.mean_abs_err(X.flatten())
+    l2 = sdata.x_prior(X.flatten())[0]
+    p1 = sdata.prediction_error_bcm(X=X, local_dist=1.0)
+    p2 = sdata.prediction_error_bcm(X=X, local_dist=0.05)
+    mbcm = sdata.build_mbcm(X=X, local_dist=local_dist)
+    ll1 = mbcm.llgrad()[0]
+    s = "trueX inf %.2f %.4f %.4f %.4f %.4f" % (ll1, l1, l2, p1, p2)
+    print s
+    results.write(s + "\n")
 
 
-def do_run(run_name, lscale, n, ntrain, nblocks, yd, seed=0,
+    results.close()
+
+
+def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
            fullgp=False, method=None,
-           obs_std=None, local_dist=1.0, maxsec=3600):
+           obs_std=None, local_dist=1.0, maxsec=3600, analyze_only=False):
 
     pmax = np.ceil(np.sqrt(nblocks))*2+1
     pts = np.linspace(0, 1, pmax)[1::2]
@@ -244,11 +274,14 @@ def do_run(run_name, lscale, n, ntrain, nblocks, yd, seed=0,
     data = sample_data(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, yd=yd, seed=seed, centers=centers)
     mbcm = data.build_mbcm(local_dist=local_dist)
 
-    d = os.path.join(EXP_DIR, run_name)
-    mkdir_p(d)
-
     X0 = data.X_obs
-    do_optimization(d, mbcm, X0, None, data, method=method, maxsec=maxsec)
+    if not analyze_only:
+        do_optimization(d, mbcm, X0, None, data, method=method, maxsec=maxsec)
+    analyze_run(d, data, local_dist=local_dist)
+
+    """
+    load the log
+    """
 
 def build_run_name(args):
     run_name = "%d_%d_%d_%.2f_%.3f_%.5f_%d_%s" % (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method)
@@ -271,11 +304,17 @@ def main():
     parser.add_argument('--seed', dest='seed', default=0, type=int)
     parser.add_argument('--yd', dest='yd', default=50, type=int)
     parser.add_argument('--maxsec', dest='maxsec', default=3600, type=int)
+    parser.add_argument('--analyze', dest='analyze', default=False, action="store_true")
+
 
     args = parser.parse_args()
 
     run_name = build_run_name(args)
-    do_run(run_name=run_name, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec)
+
+    d = os.path.join(EXP_DIR, run_name)
+    mkdir_p(d)
+
+    do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze)
 
 if __name__ == "__main__":
     main()

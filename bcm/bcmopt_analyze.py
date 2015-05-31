@@ -13,8 +13,7 @@ import sys
 
 import cPickle as pickle
 
-def load_log(run_name):
-    d = "/home/dmoore/python/sigvisa/experiments/bcmopt/" + run_name
+def load_log(d):
     log = os.path.join(d, "log.txt")
     logArray = np.loadtxt(log)
     steps = np.asarray(logArray[:, 0], dtype=int)
