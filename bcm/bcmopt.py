@@ -64,6 +64,7 @@ class SampledData(object):
         b = Blocker(centers)
         self.SX, self.SY, self.perm, self.block_boundaries = b.sort_by_block(self.SX, self.SY)
         self.centers = centers
+        self.X_obs = self.X_obs[self.perm]
 
     def build_mbcm(self, local_dist=1e-4):
         mbcm = MultiSharedBCM(self.SX, Y=self.SY, block_boundaries=self.block_boundaries,
@@ -181,7 +182,7 @@ def do_optimization(d, mbcm, X0, C0, sdata, method, maxsec=3600, parallel=False)
         if gradX:
             prior_ll, prior_grad = sdata.x_prior(xx)
             ll += prior_ll
-            gX += prior_grad
+            gX = gX.flatten() + prior_grad
         if gradC:
             gC = np.array(gradC) * C
 
