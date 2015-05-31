@@ -284,8 +284,18 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
     """
 
 def build_run_name(args):
-    run_name = "%d_%d_%d_%.2f_%.3f_%.5f_%d_%s" % (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method)
+    try:
+        ntrain, n, nblocks, obs_std, local_dist, yd, method = (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method)
+    except:
+        ntrain, n, nblocks, obs_std, local_dist, yd, method = (args['ntrain'], args['n'], args['nblocks'], args['lscale'], args['obs_std'], args['local_dist'], args['yd'], args['method'])
+    run_name = "%d_%d_%d_%.2f_%.3f_%.5f_%d_%s" % (ntrain, n, nblocks, obs_std, local_dist, yd, method)
     return run_name
+
+def exp_dir(args):
+    run_name = build_run_name(args)
+    exp_dir = os.path.join(EXP_DIR, run_name)
+    mkdir_p(exp_dir)
+    return exp_dir
 
 def main():
 
@@ -306,14 +316,9 @@ def main():
     parser.add_argument('--maxsec', dest='maxsec', default=3600, type=int)
     parser.add_argument('--analyze', dest='analyze', default=False, action="store_true")
 
-
     args = parser.parse_args()
 
-    run_name = build_run_name(args)
-
-    d = os.path.join(EXP_DIR, run_name)
-    mkdir_p(d)
-
+    d = exp_dir(args)
     do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze)
 
 if __name__ == "__main__":
