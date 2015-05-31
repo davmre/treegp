@@ -336,10 +336,10 @@ class MultiSharedBCM(object):
             t0 = time.time()
             unaries = [self.llgrad_unary(i, **kwargs) for i in range(self.n_blocks)]
             t1 = time.time()
-            print self.n_blocks, "unaries in", t1-t0, "seconds"
+            #print self.n_blocks, "unaries in", t1-t0, "seconds"
             pairs = [self.llgrad_joint(i, j, **kwargs) for (i,j) in neighbors]
             t2 = time.time()
-            print len(neighbors), "pairs in", t2-t1, "seconds"
+            #print len(neighbors), "pairs in", t2-t1, "seconds"
 
         t0 = time.time()
 

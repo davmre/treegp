@@ -34,6 +34,9 @@ def sample_data(n, ntrain, lscale, obs_std, yd, seed, centers):
     sdata.set_centers(centers)
     return sdata
 
+class OutOfTimeError(Exception):
+    pass
+
 class SampledData(object):
 
     def __init__(self,
@@ -43,7 +46,6 @@ class SampledData(object):
         self.n = n
         self.ntrain = ntrain
         self.lscale=lscale
-
 
         Xfull, Yfull, cov = sample_synthetic(n=n, noise_var=noise_var, yd=yd, lscale=lscale, seed=seed)
         self.cov = cov
@@ -55,6 +57,7 @@ class SampledData(object):
         self.centers = [np.array((0.0, 0.0))]
 
         self.obs_std = obs_std
+        np.random.seed(seed)
         self.X_obs = self.SX + np.random.randn(*X.shape)*obs_std
 
     def set_centers(self, centers):
@@ -191,7 +194,7 @@ def do_optimization(d, mbcm, X0, C0, sdata, method, maxsec=3600, parallel=False)
         sstep[0] += 1
 
         if time.time()-t0 > maxsec:
-            raise ValueError
+            raise OutOfTimeError
 
         return -ll, -grad
 
@@ -199,7 +202,7 @@ def do_optimization(d, mbcm, X0, C0, sdata, method, maxsec=3600, parallel=False)
     try:
         r = scipy.optimize.minimize(lgpllgrad, full0, jac=True, method=method, bounds=bounds)
         rx = r.x
-    except ValueError:
+    except OutOfTimeError:
         print "terminated optimization for time"
 
     t1 = time.time()
@@ -227,7 +230,7 @@ def analyze_run(n, ntrain, lscale, obs_std, yd, seed):
 
 def do_run(run_name, lscale, n, ntrain, nblocks, yd, seed=0,
            fullgp=False, method=None,
-           obs_std=None, local_dist=1.0):
+           obs_std=None, local_dist=1.0, maxsec=3600):
 
     pmax = np.ceil(np.sqrt(nblocks))*2+1
     pts = np.linspace(0, 1, pmax)[1::2]
@@ -244,7 +247,7 @@ def do_run(run_name, lscale, n, ntrain, nblocks, yd, seed=0,
     mkdir_p(d)
 
     X0 = data.X_obs
-    do_optimization(d, mbcm, X0, None, data, method=method)
+    do_optimization(d, mbcm, X0, None, data, method=method, maxsec=maxsec)
 
 def build_run_name(args):
     run_name = "%d_%d_%d_%.2f_%.3f_%.5f_%d_%s" % (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method)
@@ -271,7 +274,7 @@ def main():
     args = parser.parse_args()
 
     run_name = build_run_name(args)
-    do_run(run_name=run_name, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed)
+    do_run(run_name=run_name, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec)
 
 if __name__ == "__main__":
     main()
