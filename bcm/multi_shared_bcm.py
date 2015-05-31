@@ -62,10 +62,15 @@ def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):
     cov = GPCov(wfn_params=[1.0], dfn_params=[lscale, lscale], dfn_str="euclidean", wfn_str="se")
     KK = mcov(X, cov, noise_var)
 
-    y = scipy.stats.multivariate_normal(mean=np.zeros((X.shape[0],)), cov=KK).rvs(yd).T.reshape((-1, yd))
+    L = np.linalg.cholesky(KK)
+    Z = np.random.randn(n, yd)
+    y = np.dot(L, Z)
+
+    #y = scipy.stats.multivariate_normal(mean=np.zeros((X.shape[0],)), cov=KK).rvs(yd).T.reshape((-1, yd))
 
     return X, y, cov
 
+"""
 def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01, blocker=None, nonstationary_hparam_covs = None):
     # sample data from the prior
     np.random.seed(seed)
@@ -185,6 +190,7 @@ def sample_synthetic_bcm_new(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0
         return SX, Y, cov
     else:
         return SX, Y, cov, block_nv, block_sv, block_lscale
+"""
 
 def pair_distances(Xi, Xj):
     return np.sqrt(np.outer(np.sum(Xi**2, axis=1), np.ones((Xj.shape[0]),)) - 2*np.dot(Xi, Xj.T) + np.outer((np.ones(Xi.shape[0]),), np.sum(Xj**2, axis=1)))
