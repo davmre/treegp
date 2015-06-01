@@ -257,8 +257,8 @@ class MultiSharedBCM(object):
 
     def update_covs(self, covs):
         if not self.nonstationary:
-            nv, sv = covs[:2]
-            lscales = covs[2:]
+            nv, sv = covs[0, :2]
+            lscales = covs[0, 2:]
             self.cov = GPCov(wfn_params=[sv,], dfn_params=lscales, dfn_str="euclidean", wfn_str="se")
             self.noise_var = nv
 
@@ -383,6 +383,7 @@ class MultiSharedBCM(object):
             else:
                 gradCov = np.sum(pair_gradCov, axis=0)
                 gradCov -= np.sum([(neighbor_count[i]-1)*unary_gradCov[i] for i in range(self.n_blocks)], axis=0)
+                gradCov = gradCov.reshape((1, -1))
 
         else:
             gradCov = np.zeros((0, 0))
@@ -577,8 +578,9 @@ class MultiSharedBCM(object):
                 else:
                     dKdi = self.dKdi(X, i, block=block_i)
                 dlldi = .5 * np.sum(np.multiply(Alpha,np.dot(dKdi, Alpha)))
-                dlldi -= .5 * np.sum(np.sum(np.multiply(prec, dKdi)))
+                dlldi -= .5 * dy * np.sum(np.sum(np.multiply(prec, dKdi)))
                 gradC[i] = dlldi
+
 
         #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, gradX, gradC

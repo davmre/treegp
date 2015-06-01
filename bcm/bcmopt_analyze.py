@@ -15,8 +15,8 @@ import cPickle as pickle
 
 from matplotlib.figure import Figure
 
-RESULT_COLS = {'step': 0, 'time': 1, 'mll': 2, 'mad': 3,
-               'xprior': 4, 'predll': 5, 'predll_neighbors': 6}
+RESULT_COLS = {'step': 0, 'time': 1, 'mll': 2, 'dlscale': 3, 'mad': 4,
+               'xprior': 5, 'predll': 6, 'predll_neighbors': 7}
 
 def plot_ll(run_name):
     steps, times, lls = load_log(run_name)
@@ -71,7 +71,7 @@ def load_plot_data(runs, target="predll"):
 
     return plot_data
 
-def write_plot(plot_data, out_fname, xlabel="Time (s)", ylabel)
+def write_plot(plot_data, out_fname, xlabel="Time (s)", ylabel=""):
 
     fig = Figure(dpi=144)
     fig.patch.set_facecolor('white')
@@ -86,17 +86,17 @@ def write_plot(plot_data, out_fname, xlabel="Time (s)", ylabel)
     fig.savefig(out_fname)
 
 
-def plot_models_fixedsize():
+def fixedsize_run_params():
     ntrain = 15000
     n = 15550
     lscale = 0.4
     obs_std = 0.1
-    yd = yd
+    yd = 50
     seed=4
     local_dist=0.05
     method="l-bfgs-b"
 
-    base_params = {'ntrain': ntrain, 'n': n, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'nblocks': 1}
+    base_params = {'ntrain': ntrain, 'n': n, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'nblocks': 1, 'task': 'x'}
 
     runs = {'GP': base_params}
     block_counts = [4, 9, 16, 25, 36, 39]
@@ -107,16 +107,17 @@ def plot_models_fixedsize():
 
         localp = rfp.copy()
         localp['local_dist'] = 0.0
-        runs['Local-%d' % d] = localp
+        runs['Local-%d' % bc] = localp
+    return runs
 
+
+def plot_models_fixedsize():
+    runs = fixedsize_run_params
     for target in ("predll", "predll_neighbors", "mad"):
         plot_data = load_plot_data(runs, target=target)
         write_plot(plot_data, out_fname="fixedsize_%s.png" % target, ylabel=target)
 
-
-
-def plot_models_growing():
-
+def growing_run_params():
     yd = 50
     seed = 4
     method = "l-bfgs-b"
@@ -133,14 +134,20 @@ def plot_models_growing():
     runs_full = []
 
     for ntrain, nblock, lscale, obs_std in zip(ntrains, nblocks, lscales, obs_stds):
-        run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': nblock}
+        run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': nblock, 'task': 'x'}
         runs_gprf.append(run_params_gprf)
 
-        run_params_local = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': nblock}
+        run_params_local = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': nblock, 'task': 'x'}
         runs_local.append(run_params_local)
 
-        run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': 1}
+        run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': 1, 'task': 'x'}
         runs_full.append(run_params_full)
+
+    return runs_gprf, runs_local, runs_full
+
+def plot_models_growing():
+
+    runs_gprf, runs_local, runs_full = growing_run_params()
 
     times_local = []
     times_gprf = []
@@ -187,8 +194,58 @@ def plot_models_growing():
     write_plot(pd_predll, "predll.png", xlabel="n", ylabel="test MSLL")
     write_plot(pd_predll_true, "predll_true.png", xlabel="n", ylabel="test MSLL from true X")
 
+def cov_run_params():
+
+    lscales = [0.4, 0.1, 0.02]
+
+    runs = []
+    for lscale in lscales:
+        for init_seed in range(3):
+            run_gprf = {'ntrain': 10000, 'n': 10500, 'lscale': lscale, 'obs_std': 0.001, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 25, 'task': 'cov', 'init_seed': init_seed}
+            run_full = run_gprf.copy()
+            run_full['n_blocks'] = 1
+
+            run_local = run_gprf.copy()
+            run_local['local_dist'] = 0.00
+
+            runs.append(run_gprf)
+            runs.append(run_full)
+            runs.append(run_local)
+    return runs
+
+def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=1800):
+
+    f_out = open(outfile, 'w')
+
+    for run in runs:
+        args = ["--%s=%s" % (k,v) for (k,v) in sorted(run.items(), key=lambda x: x[0]) ]
+        if analyze:
+            args.append("--analyze")
+        if maxsec is not None:
+            args.append("--maxsec=%d" % maxsec)
+        cmd = base_cmd + " " + " ".join(args)
+        f_out.write(cmd + "\n")
+
+    f_out.close()
+
+def gen_runs():
+    runs_cov = cov_run_params()
+    runs_fixedsize = fixedsize_run_params().values()
+    runs_growing = np.concatenate(growing_run_params())
+
+    all_runs = np.concatenate([runs_cov, runs_fixedsize, runs_growing])
+
+    gen_runexp(all_runs, "python treegp/bcm/bcmopt.py", "runexp.sh", analyze=False)
+    gen_runexp(all_runs, "python treegp/bcm/bcmopt.py", "analyze.sh", analyze=True)
+
+    # get fixedsize runs
+    # get variable runs
+    # conglomerate them into a list of run params
+    # call gen_runexp twice to generate a run script and an analysis script
+
+
 def main():
-    results_from_step(sys.argv[1], sys.argv[2])
+    gen_runs()
 
 if __name__ =="__main__":
     main()
