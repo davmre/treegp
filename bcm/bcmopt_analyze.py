@@ -1,6 +1,6 @@
 from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic
 from treegp.bcm.local_regression import BCM
-from treegp.bcm.bcmopt import SampledData
+from treegp.bcm.bcmopt import SampledData, exp_dir
 
 from treegp.gp import GPCov, GP, mcov, prior_sample, dgaussian
 from treegp.util import mkdir_p
@@ -14,6 +14,9 @@ import sys
 import cPickle as pickle
 
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+
 
 RESULT_COLS = {'step': 0, 'time': 1, 'mll': 2, 'dlscale': 3, 'mad': 4,
                'xprior': 5, 'predll': 6, 'predll_neighbors': 7}
@@ -58,7 +61,7 @@ def load_final_results(d):
         r_true = read_result_line(lines[-1])
     return r_final, r_true
 
-def load_plot_data(runs, target="predll"):
+def load_plot_data(runs, target="predll", running_best=True):
 
     col = RESULT_COLS[target]
 
@@ -67,11 +70,18 @@ def load_plot_data(runs, target="predll"):
         results = load_results(exp_dir(run_params))
         t = results[:, 1]
         y = results[:, col]
+
+        if running_best:
+            lls = results[:, 2]
+            best_lls = [np.argmax(lls[:i+1]) for i in range(len(lls))]
+            y = y[best_lls]
+
         plot_data[label] = (t, y)
 
     return plot_data
 
-def write_plot(plot_data, out_fname, xlabel="Time (s)", ylabel=""):
+def write_plot(plot_data, out_fname, xlabel="Time (s)", 
+               ylabel="", ylim=None, plot_args = None):
 
     fig = Figure(dpi=144)
     fig.patch.set_facecolor('white')
@@ -79,27 +89,36 @@ def write_plot(plot_data, out_fname, xlabel="Time (s)", ylabel=""):
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(ylabel)
 
-    for label, (x, y) in plot_data.items():
-        ax.plot(x, y, label=label)
+    if plot_args is None:
+        plot_args = lambda x : dict()
+
+    for label, (x, y) in sorted(plot_data.items()):
+        ax.plot(x, y, label=label, **plot_args(label))
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     ax.legend()
+
+
+
+    canvas = FigureCanvasAgg(fig)
+    #can.print_figure('test')
     fig.savefig(out_fname)
 
 
-def fixedsize_run_params():
+def fixedsize_run_params(lscale=0.4, obs_std=0.1):
     ntrain = 15000
     n = 15550
-    lscale = 0.4
-    obs_std = 0.1
     yd = 50
     seed=4
     local_dist=0.05
     method="l-bfgs-b"
 
-    base_params = {'ntrain': ntrain, 'n': n, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'nblocks': 1, 'task': 'x'}
+    base_params = {'ntrain': ntrain, 'n': n, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'nblocks': 1, 'task': 'x', 'noise_var': 0.01}
 
     runs = {'GP': base_params}
-    block_counts = [4, 9, 16, 25, 36, 39]
+    block_counts = [4, 9, 16, 25, 36, 49]
     for bc in block_counts:
         rfp = base_params.copy()
         rfp['nblocks'] = bc
@@ -111,11 +130,27 @@ def fixedsize_run_params():
     return runs
 
 
-def plot_models_fixedsize():
-    runs = fixedsize_run_params
+def plot_models_fixedsize(**kwargs):
+    runs = fixedsize_run_params(**kwargs)
+    ylims = {'predll': (-5, 0),
+             'predll_neighbors': (-5, 0),
+             'mad': (0.0, 0.2)}
+
+
+    def plot_args(label):
+        args = {}
+        if "Local" in label:
+            args['linestyle'] = '--'
+        elif "GPRF" in label:
+            args['linestyle'] = '-'
+        elif label==GP:
+            args['linestyle'] = '.'
+        return args
+
     for target in ("predll", "predll_neighbors", "mad"):
         plot_data = load_plot_data(runs, target=target)
-        write_plot(plot_data, out_fname="fixedsize_%s.png" % target, ylabel=target)
+        write_plot(plot_data, out_fname="fixedsize_%s.png" % target, 
+                   ylabel=target, ylim=ylims[target], plot_args=plot_args)
 
 def growing_run_params():
     yd = 50
@@ -134,13 +169,13 @@ def growing_run_params():
     runs_full = []
 
     for ntrain, nblock, lscale, obs_std in zip(ntrains, nblocks, lscales, obs_stds):
-        run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': nblock, 'task': 'x'}
+        run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': nblock, 'task': 'x', 'noise_var': 0.01}
         runs_gprf.append(run_params_gprf)
 
-        run_params_local = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': nblock, 'task': 'x'}
+        run_params_local = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': nblock, 'task': 'x', 'noise_var': 0.01}
         runs_local.append(run_params_local)
 
-        run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': 1, 'task': 'x'}
+        run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.00, "method": method, 'nblocks': 1, 'task': 'x', 'noise_var': 0.01}
         runs_full.append(run_params_full)
 
     return runs_gprf, runs_local, runs_full
@@ -194,14 +229,57 @@ def plot_models_growing():
     write_plot(pd_predll, "predll.png", xlabel="n", ylabel="test MSLL")
     write_plot(pd_predll_true, "predll_true.png", xlabel="n", ylabel="test MSLL from true X")
 
+def cov_run_params_hard():
+
+    #lscales = [0.4, 0.1, 0.02]
+    lscale = 0.4
+    noises = [0.1, 1.0]
+
+    runs = []
+    for noise_var in noises:
+        for init_seed in range(2):
+            run_gprf = {'ntrain': 15000, 'n': 15500, 'lscale': lscale, 'obs_std': 0.001, 'yd': 10, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 36, 'task': 'cov', 'init_seed': init_seed, 'noise_var': noise_var}
+            run_full = run_gprf.copy()
+            run_full['nblocks'] = 1
+
+            run_local = run_gprf.copy()
+            run_local['local_dist'] = 0.00
+
+            runs.append(run_gprf)
+            #runs.append(run_full)
+            runs.append(run_local)
+    return runs
+
+def xcov_run_params():
+
+    #lscales = [0.4, 0.1, 0.02]
+    noise_var = 0.01
+    lscale = 0.4
+    obs_stds = [0.2, 0.1, 0.02]
+
+    runs = []
+    for obs_std in obs_stds:
+        for init_seed in range(3):
+            run_gprf = {'ntrain': 15000, 'n': 15500, 'lscale': lscale, 'obs_std': obs_std, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'tnc', 'nblocks': 49, 'task': 'xcov', 'init_seed': init_seed, 'noise_var': noise_var}
+            run_full = run_gprf.copy()
+            run_full['nblocks'] = 1
+
+            run_local = run_gprf.copy()
+            run_local['local_dist'] = 0.00
+
+            runs.append(run_gprf)
+            #runs.append(run_full)
+            runs.append(run_local)
+    return runs
+
 def cov_run_params():
 
     lscales = [0.4, 0.1, 0.02]
 
     runs = []
     for lscale in lscales:
-        for init_seed in range(3):
-            run_gprf = {'ntrain': 10000, 'n': 10500, 'lscale': lscale, 'obs_std': 0.001, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 25, 'task': 'cov', 'init_seed': init_seed}
+        for init_seed in range(2):
+            run_gprf = {'ntrain': 10000, 'n': 10500, 'lscale': lscale, 'obs_std': 0.001, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 25, 'task': 'cov', 'init_seed': init_seed, 'noise_var': 0.01}
             run_full = run_gprf.copy()
             run_full['nblocks'] = 1
 
@@ -212,6 +290,7 @@ def cov_run_params():
             runs.append(run_full)
             runs.append(run_local)
     return runs
+
 
 def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=1800):
 
@@ -229,20 +308,26 @@ def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=1800):
     f_out.close()
 
 def gen_runs():
-    runs_cov = cov_run_params()
-    runs_fixedsize = fixedsize_run_params().values()
-    runs_growing = np.concatenate(growing_run_params())
+    #runs_cov = cov_run_params()
+    #runs_fixedsize = fixedsize_run_params(lscale=0.1, obs_std=0.02).values()
+    
 
-    all_runs = np.concatenate([runs_cov, runs_fixedsize, runs_growing])
+    #runs_growing = np.concatenate(growing_run_params())
 
-    gen_runexp(all_runs, "python treegp/bcm/bcmopt.py", "runexp.sh", analyze=False)
-    gen_runexp(all_runs, "python treegp/bcm/bcmopt.py", "analyze.sh", analyze=True)
+    runs_cov = cov_run_params_hard()
+    runs_xcov = xcov_run_params()
+
+    all_runs = np.concatenate([runs_cov, runs_xcov])
+
+    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "runexp2.sh", analyze=False)
+    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "analyze2.sh", analyze=True)
 
     # get fixedsize runs
     # get variable runs
     # conglomerate them into a list of run params
     # call gen_runexp twice to generate a run script and an analysis script
-
+    plot_models_fixedsize(lscale=0.1, obs_std=0.02)
+    
 
 def main():
     gen_runs()

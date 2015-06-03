@@ -15,17 +15,17 @@ import argparse
 
 EXP_DIR = os.path.join(os.environ["HOME"], "bcmopt_experiments")
 
-def sample_data(n, ntrain, lscale, obs_std, yd, seed, centers):
+def sample_data(n, ntrain, lscale, obs_std, yd, seed, centers, noise_var):
     sample_basedir = os.path.join(os.environ["HOME"], "bcmopt_experiments", "synthetic_datasets")
     mkdir_p(sample_basedir)
-    sample_fname = "%d_%d_%.2f_%.3f_%d_%d.pkl" % (n, ntrain, lscale, obs_std, yd, seed)
+    sample_fname = "%d_%d_%.2f_%.3f_%d_%d%s.pkl" % (n, ntrain, lscale, obs_std, yd, seed, "" if noise_var==0.01 else "_%.4f" % noise_var)
     sample_fname_full = os.path.join(sample_basedir, sample_fname)
 
     try:
         with open(sample_fname_full, 'rb') as f:
             sdata = pickle.load(f)
     except IOError:
-        sdata = SampledData(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, seed=seed, centers=None, yd=yd)
+        sdata = SampledData(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, seed=seed, centers=None, yd=yd, noise_var=noise_var)
 
         with open(sample_fname_full, 'wb') as f:
             pickle.dump(sdata, f)
@@ -117,21 +117,32 @@ class SampledData(object):
 
         return ll
 
-    def prediction_error_bcm(self, X=None, cov=None, local_dist=1.0):
+    def prediction_error_bcm(self, X=None, cov=None, local_dist=1.0, marginal=False):
         ntest = self.n-self.ntrain
         yd = self.SY.shape[1]
         mbcm = self.build_mbcm(X=X, cov=cov, local_dist=local_dist)
 
-        # TODO: predict with respect to local covs instead of a global test cov
         p = mbcm.train_predictor()
-        PM, PC = p(self.Xtest, test_noise_var=self.noise_var)
-        PP = np.linalg.inv(PC)
-        PR = self.Ytest-PM
+        if marginal:
+            ll = 0
+            for xt, yt in zip(self.Xtest, self.Ytest):
+                PM, PC = p(xt.reshape((1, -1)), test_noise_var=self.noise_var)
+                PP = np.linalg.inv(PC)
+                PR = np.reshape(yt, (1, -1))-PM
+                ll -= .5 * np.sum(PP *  np.dot(PR, PR.T))
+                ll -= .5 * yd * np.linalg.slogdet(PC)[1]
+                ll -= .5 * yd * np.log(2*np.pi)
+        else:
+            PM, PC = p(self.Xtest, test_noise_var=self.noise_var)
+            PP = np.linalg.inv(PC)
+            PR = self.Ytest-PM
 
-        ll =  -.5 * np.sum(PP *  np.dot(PR, PR.T))
-        ll += -.5 * np.linalg.slogdet(PC)[1]
-        ll += -.5 * ntest * yd * np.log(2*np.pi)
+            ll =  -.5 * np.sum(PP *  np.dot(PR, PR.T))
+            ll += -.5 * yd * np.linalg.slogdet(PC)[1]
+            ll += -.5 * ntest * yd * np.log(2*np.pi)
+
         return ll / (ntest * yd)
+        
 
     def x_prior(self, xx):
         flatobs = self.X_obs.flatten()
@@ -300,7 +311,7 @@ def analyze_run(d, sdata, local_dist=1.0):
         c1 = sdata.lscale_error(FC) if FC is not None else 0.00
         l2 = sdata.x_prior(X.flatten())[0]
         p1 = sdata.prediction_error_bcm(X=X, cov=FC, local_dist=1.0)
-        p2 = sdata.prediction_error_bcm(X=X, cov=FC, local_dist=0.05)
+        p2 = sdata.prediction_error_bcm(X=X, cov=FC, marginal=True)
         s = "%d %.2f %.2f %.4f %.4f %.4f %.4f %.4f" % (step, times[i], lls[i], c1, l1, l2, p1, p2)
         print s
         results.write(s + "\n")
@@ -310,7 +321,7 @@ def analyze_run(d, sdata, local_dist=1.0):
     c1 = 0.0
     l2 = sdata.x_prior(X.flatten())[0]
     p1 = sdata.prediction_error_bcm(X=X, cov=None, local_dist=1.0)
-    p2 = sdata.prediction_error_bcm(X=X, cov=None, local_dist=0.05)
+    p2 = sdata.prediction_error_bcm(X=X, cov=None, marginal=True)
     mbcm = sdata.build_mbcm(X=X, local_dist=local_dist)
     ll1 = mbcm.llgrad()[0]
     s = "trueX inf %.2f %.4f %.4f %.4f %.4f %.4f" % (ll1, c1, l1, l2, p1, p2)
@@ -321,7 +332,7 @@ def analyze_run(d, sdata, local_dist=1.0):
 def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
            fullgp=False, method=None,
            obs_std=None, local_dist=1.0, maxsec=3600,
-           task='x', analyze_only=False, init_seed=-1):
+           task='x', analyze_only=False, init_seed=-1, noise_var=0.01):
 
     pmax = np.ceil(np.sqrt(nblocks))*2+1
     pts = np.linspace(0, 1, pmax)[1::2]
@@ -331,7 +342,7 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
     if obs_std is None:
         obs_std = lscale/10
 
-    data = sample_data(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, yd=yd, seed=seed, centers=centers)
+    data = sample_data(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, yd=yd, seed=seed, centers=centers, noise_var=noise_var)
     mbcm = data.build_mbcm(local_dist=local_dist)
 
     if task=='x':
@@ -346,7 +357,12 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
             C0 = np.array((0.1, 1.0, 0.3,  0.3)).reshape(1,-1)
     elif task =='xcov':
         X0 = data.X_obs
-        C0 = np.array((0.3)).reshape(1,1)
+        if init_seed >= 0:
+            np.random.seed(init_seed)
+            C0 = np.exp(np.random.randn(1, 1)-1)
+            X0 = X0 + np.random.randn(*X0.shape)*0.005
+        else:
+            C0 = np.array((0.3)).reshape(1,1)
     else:
         raise Exception("unrecognized task "+ task)
 
@@ -362,10 +378,13 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
 
 def build_run_name(args):
     try:
-        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed = (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method, args.task, args.init_seed)
+        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, noise_var = (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method, args.task, args.init_seed, args.noise_var)
     except:
-        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed = (args['ntrain'], args['n'], args['nblocks'], args['lscale'], args['obs_std'], args['local_dist'], args['yd'], args['method'], args['task'], args['init_seed'])
-    run_name = "%d_%d_%d_%.2f_%.2f_%.3f_%d_%s_%s_%d" % (ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed)
+        defaults = { 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'task': 'x', 'init_seed': -1, 'noise_var': 0.01}
+        defaults.update(args)
+        args = defaults
+        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, noise_var = (args['ntrain'], args['n'], args['nblocks'], args['lscale'], args['obs_std'], args['local_dist'], args['yd'], args['method'], args['task'], args['init_seed'], args['noise_var'])
+    run_name = "%d_%d_%d_%.2f_%.2f_%.3f_%d_%s_%s_%d%s" % (ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, "" if noise_var==0.01 else "%.4f" % noise_var)
     return run_name
 
 def exp_dir(args):
@@ -394,11 +413,12 @@ def main():
     parser.add_argument('--task', dest='task', default="x", type=str)
     parser.add_argument('--analyze', dest='analyze', default=False, action="store_true")
     parser.add_argument('--init_seed', dest='init_seed', default=-1, type=int)
+    parser.add_argument('--noise_var', dest='noise_var', default=0.01, type=float)
 
     args = parser.parse_args()
 
     d = exp_dir(args)
-    do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze, task=args.task, init_seed=args.init_seed)
+    do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze, task=args.task, init_seed=args.init_seed, noise_var=args.noise_var)
 
 if __name__ == "__main__":
     main()
