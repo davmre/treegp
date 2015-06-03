@@ -232,6 +232,11 @@ class MultiSharedBCM(object):
         neighbor_count = defaultdict(int)
         neighbors = []
 
+        if threshold < 1e-8:
+            self.neighbor_count = neighbor_count
+            self.neighbors = neighbors
+            return
+            
 
         for i in range(self.n_blocks):
             i_start, i_end = self.block_boundaries[i]
