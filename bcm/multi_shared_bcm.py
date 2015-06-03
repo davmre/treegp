@@ -232,7 +232,7 @@ class MultiSharedBCM(object):
         neighbor_count = defaultdict(int)
         neighbors = []
 
-        if self.threshold < 1e-8:
+        if threshold < 1e-8:
             self.neighbor_count = neighbor_count
             self.neighbors = neighbors
             return
