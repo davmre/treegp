@@ -492,7 +492,7 @@ class MultiSharedBCM(object):
             dKdi = ptree.kernel_deriv_wrt_i(X1, X1, i-2, 1, dc)
         return dKdi
 
-    def gaussian_llgrad(self, X, Y, grad_X = False, grad_cov=False, block_i=None, block_j=None):
+    def gaussian_llgrad(self, X, Y, grad_X = False, grad_cov=False, block_i=None, block_j=None, block_split_n=None):
 
         t0 = time.time()
         n, dx = X.shape
@@ -507,14 +507,34 @@ class MultiSharedBCM(object):
 
         if self.nonstationary and block_j is not None:
             # if we're here, it's because we're averaging covs
-            K1 = self.kernel(X, block=block_i)
-            K2 = self.kernel(X, block=block_j)
-            K = (K1 + K2)/2
+            X1 = X[:block_split_n]
+            X2 = X[block_split_n:]
+            K1 = self.kernel(X1, block=block_i)
+            K2 = self.kernel(X2, block=block_j)
+
+            K12 = self.average_kernel(X1, X2, block_i=block_i, block_j=block_j)
+            K = np.empty((n, n))
+            K[:block_split_n, :block_split_n] = K1
+            K[block_split_n:, block_split_n:] = K2
+            K[:block_split_n, block_split_n:] = K12
+            K[block_split_n:, :block_split_n] = K12.T
+
+
         else:
             K = self.kernel(X, block=block_i)
 
         prec = np.linalg.inv(K)
-        Alpha = np.dot(prec, Y)
+
+        """
+        I = np.dot(prec, K)
+        Z = I - np.eye(I.shape[0])
+        numerical_error = np.max(np.abs(Z))
+        if numerical_error > 1e-6:
+            raise ValueError("numerical error of %f" % numerical_error)
+        """
+
+        Alpha = np.linalg.solve(K, Y)
+        #Alpha = np.dot(prec, Y)
 
         ll = -.5 * np.sum(Y*Alpha)
         ll += -.5 * dy * np.linalg.slogdet(K)[1]
@@ -584,6 +604,11 @@ class MultiSharedBCM(object):
 
         #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, gradX, gradC
+
+    def train_predictor_nonstationary(self):
+        # train a GP on the
+
+        def nonstationary_cov_from_gp(X, centers, covs)
 
     def train_predictor(self, test_cov=None, Y=None):
 
