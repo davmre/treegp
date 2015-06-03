@@ -203,7 +203,7 @@ def cov_run_params():
         for init_seed in range(3):
             run_gprf = {'ntrain': 10000, 'n': 10500, 'lscale': lscale, 'obs_std': 0.001, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 25, 'task': 'cov', 'init_seed': init_seed}
             run_full = run_gprf.copy()
-            run_full['n_blocks'] = 1
+            run_full['nblocks'] = 1
 
             run_local = run_gprf.copy()
             run_local['local_dist'] = 0.00
