@@ -105,7 +105,7 @@ def vis_points(run=None, d=None, sdata_file=None, y_target=0):
         elif sdata_file is None:
             c = None
         else:
-            c = sdata.SY[:, y_target]
+            c = sdata.SY[:, y_target:y_target+1].flatten()
         ax.scatter(X[:, 0], X[:, 1], alpha=0.2, c=c, cmap=cmap)
 
         canvas = FigureCanvasAgg(fig)
@@ -166,6 +166,8 @@ def fixedsize_run_params(lscale=0.4, obs_std=0.1):
     return runs
 
 
+
+
 def plot_models_fixedsize(**kwargs):
     runs = fixedsize_run_params(**kwargs)
     ylims = {'predll': (-5, 0),
@@ -215,6 +217,39 @@ def growing_run_params():
         runs_full.append(run_params_full)
 
     return runs_gprf, runs_local, runs_full
+
+
+def fault_run_params():
+    yd = 50
+    seed = 1004
+    method = "l-bfgs-b"
+    ntest  =500
+
+    ntrains = [1000, 3000, 5000, 10000, 20000]
+    rpc_sizes = [200, 500]
+    lscales = [0.1, 0.05]
+    obs_stds = [0.02,]
+    local_dists = [0.0, 0.001, 0.01]
+
+    x = ntrains
+    runs_gprf = []
+    runs_local = []
+    runs_full = []
+
+    for ntrain in ntrains:
+        for lscale in lscales:
+            for obs_std in obs_stds:
+                run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': 1, 'task': 'x', 'noise_var': 0.01}
+                runs_full.append(run_params_full)
+
+                for rpc_size in rpc_sizes:
+                    for local_dist in local_dists:
+                        run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'rpc_blocksize': rpc_size, 'task': 'x', 'noise_var': 0.01}
+                        runs_gprf.append(run_params_gprf)
+
+    return runs_gprf+runs_full
+
+
 
 def plot_models_growing():
 
@@ -339,7 +374,7 @@ def cov_run_params():
     return runs
 
 
-def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=1800):
+def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=5400):
 
     f_out = open(outfile, 'w')
 
@@ -364,11 +399,15 @@ def gen_runs():
     runs_cov = cov_run_params_hard()
     #runs_xcov = xcov_run_params()
 
+    runs_fault = fault_run_params()
+    gen_runexp(runs_fault, "python python/bcm/treegp/bcm/bcmopt.py", "run_fault.sh", analyze=False)
+    gen_runexp(runs_fault, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_fault.sh", analyze=True)
+
     #all_runs = np.concatenate([runs_cov, runs_xcov])
     #all_runs = runs_xcov
 
-    for run in runs_cov:
-        dump_covs(exp_dir(run))        
+    #for run in runs_cov:
+    #    dump_covs(exp_dir(run))        
 
     #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "runexp3.sh", analyze=False)
     #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "analyze3.sh", analyze=True)
@@ -380,7 +419,7 @@ def gen_runs():
 
     #plot_models_fixedsize(lscale=0.4, obs_std=0.1)
     #plot_models_growing()
-    vis_points(d="bcmopt_experiments/15000_15550_36_0.40_0.10_0.050_50_l-bfgs-b_x_-1", y_target=-1, sdata_file='bcmopt_experiments/synthetic_datasets/15550_15000_0.40_0.100_50_4.pkl')
+    #vis_points(d="bcmopt_experiments/5000_5500_000250_0.05_0.02_0.000_50_l-bfgs-b_x_-1/", y_target=1, sdata_file="bcmopt_experiments/synthetic_datasets/5500_5000_0.05_0.020_50_1001.pkl")
 
     #plot_models_fixedsize(lscale=0.1, obs_std=0.02)
     

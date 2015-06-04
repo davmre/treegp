@@ -15,7 +15,9 @@ import argparse
 
 EXP_DIR = os.path.join(os.environ["HOME"], "bcmopt_experiments")
 
-def sample_data(n, ntrain, lscale, obs_std, yd, seed, centers, noise_var):
+
+def sample_data(n, ntrain, lscale, obs_std, yd, seed, 
+                centers, noise_var, rpc_blocksize=-1):
     sample_basedir = os.path.join(os.environ["HOME"], "bcmopt_experiments", "synthetic_datasets")
     mkdir_p(sample_basedir)
     sample_fname = "%d_%d_%.2f_%.3f_%d_%d%s.pkl" % (n, ntrain, lscale, obs_std, yd, seed, "" if noise_var==0.01 else "_%.4f" % noise_var)
@@ -30,12 +32,16 @@ def sample_data(n, ntrain, lscale, obs_std, yd, seed, centers, noise_var):
         with open(sample_fname_full, 'wb') as f:
             pickle.dump(sdata, f)
 
-
-    sdata.set_centers(centers)
+    if centers is not None:
+        sdata.set_centers(centers)
+    else:
+        np.random.seed(seed)
+        sdata.cluster_rpc(rpc_blocksize)
     return sdata
 
 class OutOfTimeError(Exception):
     pass
+
 
 class SampledData(object):
 
@@ -64,6 +70,11 @@ class SampledData(object):
         b = Blocker(centers)
         self.SX, self.SY, self.perm, self.block_boundaries = b.sort_by_block(self.SX, self.SY)
         self.centers = centers
+        self.X_obs = self.X_obs[self.perm]
+
+    def cluster_rpc(self, blocksize):
+        CC = cluster_rpc((self.SX, self.SY, np.arange(self.SX.shape[0])), target_size=blocksize)
+        self.SX, self.SY, self.perm, self.block_boundaries = sort_by_cluster(CC)
         self.X_obs = self.X_obs[self.perm]
 
     def build_mbcm(self, X=None, cov=None, local_dist=1e-4):
@@ -351,20 +362,62 @@ def analyze_run(d, sdata, local_dist=1.0):
     results.write(s + "\n")
     results.close()
 
+def sort_by_cluster(clusters):
+    Xs, ys, perms = zip(*clusters)
+    SX = np.vstack(Xs)
+    SY = np.vstack(ys)
+    perm = np.concatenate(perms).flatten()
+    block_boundaries = []
+    n = 0
+    for (X,y,p) in clusters:
+        cn = X.shape[0]
+        block_boundaries.append((n, n+cn))
+        n += cn
+    return SX, SY, perm, block_boundaries
+
+def cluster_rpc((X, y, perm), target_size):
+    n = X.shape[0]
+    if n < target_size:
+        return [(X, y, perm),]
+
+    x1 = X[np.random.randint(n), :]
+    x2 = x1
+    while (x2==x1).all():
+        x2 = X[np.random.randint(n), :]
+
+    # what's the projection of x3 onto (x1-x2)?
+    # imagine that x2 is the origin, so it's just x3 onto x1.
+    # This is x1 * <x3, x1>/||x1||
+    cx1 = x1 - x2
+    nx1 = cx1 / np.linalg.norm(cx1)
+    alphas = [ np.dot(xi-x2, nx1)  for xi in X]
+    median = np.median(alphas)
+    C1 = (X[alphas < median], y[alphas < median], perm[alphas < median])
+    C2 = (X[alphas >= median], y[alphas >= median], perm[alphas >= median])
+
+    L1 = cluster_rpc(C1, target_size=target_size)
+    L2 = cluster_rpc(C2, target_size=target_size)
+    return L1 + L2
+
 def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
            fullgp=False, method=None,
            obs_std=None, local_dist=1.0, maxsec=3600,
-           task='x', analyze_only=False, init_seed=-1, noise_var=0.01):
+           task='x', analyze_only=False, init_seed=-1, 
+           noise_var=0.01, rpc_blocksize=-1):
 
-    pmax = np.ceil(np.sqrt(nblocks))*2+1
-    pts = np.linspace(0, 1, pmax)[1::2]
-    centers = [np.array((xx, yy)) for xx in pts for yy in pts]
-    print "bcm with %d blocks" % (len(centers))
+    if rpc_blocksize==-1:
+        pmax = np.ceil(np.sqrt(nblocks))*2+1
+        pts = np.linspace(0, 1, pmax)[1::2]
+        centers = [np.array((xx, yy)) for xx in pts for yy in pts]
+        print "bcm with %d blocks" % (len(centers))
+    else:
+        centers = None
+        print "bcm with rpc blocksize %d" % rpc_blocksize
 
     if obs_std is None:
         obs_std = lscale/10
 
-    data = sample_data(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, yd=yd, seed=seed, centers=centers, noise_var=noise_var)
+    data = sample_data(n=n, ntrain=ntrain, lscale=lscale, obs_std=obs_std, yd=yd, seed=seed, centers=centers, noise_var=noise_var, rpc_blocksize=rpc_blocksize)
     mbcm = data.build_mbcm(local_dist=local_dist)
 
     if task=='x':
@@ -400,13 +453,13 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
 
 def build_run_name(args):
     try:
-        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, noise_var = (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method, args.task, args.init_seed, args.noise_var)
+        ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, noise_var, rpc_blocksize = (args.ntrain, args.n, args.nblocks, args.lscale, args.obs_std, args.local_dist, args.yd, args.method, args.task, args.init_seed, args.noise_var, args.rpc_blocksize)
     except:
-        defaults = { 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'task': 'x', 'init_seed': -1, 'noise_var': 0.01}
+        defaults = { 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'task': 'x', 'init_seed': -1, 'noise_var': 0.01, 'rpc_blocksize': -1}
         defaults.update(args)
         args = defaults
         ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, noise_var = (args['ntrain'], args['n'], args['nblocks'], args['lscale'], args['obs_std'], args['local_dist'], args['yd'], args['method'], args['task'], args['init_seed'], args['noise_var'])
-    run_name = "%d_%d_%d_%.2f_%.2f_%.3f_%d_%s_%s_%d%s" % (ntrain, n, nblocks, lscale, obs_std, local_dist, yd, method, task, init_seed, "" if noise_var==0.01 else "%.4f" % noise_var)
+    run_name = "%d_%d_%s_%.2f_%.2f_%.3f_%d_%s_%s_%d%s" % (ntrain, n, "%d" % nblocks if rpc_blocksize==-1 else "%06d" % rpc_blocksize, lscale, obs_std, local_dist, yd, method, task, init_seed, "" if noise_var==0.01 else "%.4f" % noise_var)
     return run_name
 
 def exp_dir(args):
@@ -425,6 +478,7 @@ def main():
     parser.add_argument('--ntrain', dest='ntrain', type=int)
     parser.add_argument('--n', dest='n', type=int)
     parser.add_argument('--nblocks', dest='nblocks', default=1, type=int)
+    parser.add_argument('--rpc_blocksize', dest='rpc_blocksize', default=-1, type=int)
     parser.add_argument('--lscale', dest='lscale', type=float)
     parser.add_argument('--obs_std', dest='obs_std', type=float)
     parser.add_argument('--local_dist', dest='local_dist', default=1.0, type=float)
@@ -440,7 +494,7 @@ def main():
     args = parser.parse_args()
 
     d = exp_dir(args)
-    do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze, task=args.task, init_seed=args.init_seed, noise_var=args.noise_var)
+    do_run(d=d, lscale=args.lscale, obs_std=args.obs_std, local_dist=args.local_dist, n=args.n, ntrain=args.ntrain, nblocks=args.nblocks, yd=args.yd, method=args.method, rpc_blocksize=args.rpc_blocksize, seed=args.seed, maxsec=args.maxsec, analyze_only=args.analyze, task=args.task, init_seed=args.init_seed, noise_var=args.noise_var)
 
 if __name__ == "__main__":
     main()

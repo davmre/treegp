@@ -1,6 +1,6 @@
 from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic
 from treegp.bcm.local_regression import BCM
-from treegp.bcm.bcmopt import OutOfTimeError, load_log
+from treegp.bcm.bcmopt import OutOfTimeError, load_log, cluster_rpc, sort_by_cluster
 
 from treegp.gp import GPCov, GP, mcov, prior_sample, dgaussian
 from treegp.util import mkdir_p
@@ -38,42 +38,6 @@ def load_sarcos():
     train_y /= np.std(train_y)
 
     return train_X, train_y, test_X, test_y
-
-def cluster_rpc((X, y), target_size):
-    n = X.shape[0]
-    if n < target_size:
-        return [(X, y),]
-
-    x1 = X[np.random.randint(n), :]
-    x2 = x1
-    while (x2==x1).all():
-        x2 = X[np.random.randint(n), :]
-
-    # what's the projection of x3 onto (x1-x2)?
-    # imagine that x2 is the origin, so it's just x3 onto x1.
-    # This is x1 * <x3, x1>/||x1||
-    cx1 = x1 - x2
-    nx1 = cx1 / np.linalg.norm(cx1)
-    alphas = [ np.dot(xi-x2, nx1)  for xi in X]
-    median = np.median(alphas)
-    C1 = (X[alphas < median], y[alphas < median])
-    C2 = (X[alphas >= median], y[alphas >= median])
-
-    L1 = cluster_rpc(C1, target_size=target_size)
-    L2 = cluster_rpc(C2, target_size=target_size)
-    return L1 + L2
-
-def sort_by_cluster(clusters):
-    Xs, ys = zip(*clusters)
-    SX = np.vstack(Xs)
-    SY = np.concatenate(ys).reshape((-1, 1))
-    block_boundaries = []
-    n = 0
-    for (X,y) in clusters:
-        cn = X.shape[0]
-        block_boundaries.append((n, n+cn))
-        n += cn
-    return SX, SY, block_boundaries
 
 
 def optimize_cov(d, mbcm, seed, maxsec=36000):
@@ -155,10 +119,12 @@ def run_sarcos(seed, block_size, thresh, npts=None, maxsec=3600):
     npts = n if (npts is None or npts <= 0) else npts
     p = np.random.permutation(n)[:npts]
     tX, ty = tX[p], ty[p]
+    ty = ty.reshape((-1, 1))
 
     np.random.seed(seed)
     CC = cluster_rpc((tX, ty), target_size=block_size)
     SX, SY, block_boundaries = sort_by_cluster(CC)
+    SY = SY.flatten()
 
     np.save(os.path.join(d, "SX.npy"), SX)
     np.save(os.path.join(d, "SY.npy"), SY)
@@ -192,8 +158,8 @@ def eval_predict(seed, block_size, thresh, npts=None,
 
     if predict_from_fullX:
         np.random.seed(seed)
-        CC = cluster_rpc((X, y), target_size=block_size)
-        SX, SY, block_boundaries = sort_by_cluster(CC)        
+        CC = cluster_rpc((X, y, np.arange(self.SX.shape[0])), target_size=block_size)
+        SX, SY, perm, block_boundaries = sort_by_cluster(CC)        
     else:
         SX = np.load(os.path.join(d, "SX.npy"))
         SY = np.load(os.path.join(d, "SY.npy"))
