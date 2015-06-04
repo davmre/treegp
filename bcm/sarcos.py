@@ -40,15 +40,19 @@ def load_sarcos():
     return train_X, train_y, test_X, test_y
 
 
-def optimize_cov(d, mbcm, seed, maxsec=36000):
+def optimize_cov(d, mbcm, seed, maxsec=36000, init_cov=""):
     means = np.ones((23,), dtype=float)
     means[0] = -4.0
     means[1] = 0.5
     means[2:] = 2.0
 
     np.random.seed(seed)
-    c0 = np.random.randn(23) + means
-    C0 = c0.reshape((1, -1))
+    if init_cov =="":
+        c0 = np.random.randn(23) + means
+        C0 = c0.reshape((1, -1))
+    else:
+        C0 = np.log(np.load(init_cov))
+        c0 = C0.flatten()
 
     def cov_prior(c):
         std = 3
@@ -87,7 +91,7 @@ def optimize_cov(d, mbcm, seed, maxsec=36000):
         results.flush()
         
         covf.write("%d %s\n" % (sstep[0], FC))
-
+        covf.flush()
         sstep[0] += 1
 
         if time.time()-t0 > maxsec:
@@ -102,15 +106,16 @@ def optimize_cov(d, mbcm, seed, maxsec=36000):
     results.close()
     covf.close()
 
-def sarcos_exp_dir(seed, block_size, thresh, npts):
+def sarcos_exp_dir(seed, block_size, thresh, npts, init_cov):
+    import hashlib
     base_dir = "sarcos_experiments"
-    run_name = "%d_%d_%.4f_%d" % (seed, block_size, thresh, npts)
+    run_name = "%d_%d_%.4f_%d%s" % (seed, block_size, thresh, npts, "" if init_cov=="" else "_%s" % hashlib.md5(init_cov).hexdigest()[:8])
     d =  os.path.join(base_dir, run_name)
     mkdir_p(d)
     return d
 
-def run_sarcos(seed, block_size, thresh, npts=None, maxsec=3600):
-    d = sarcos_exp_dir(seed, block_size, thresh, npts)
+def run_sarcos(seed, block_size, thresh, init_cov, npts=None, maxsec=3600):
+    d = sarcos_exp_dir(seed, block_size, thresh, npts, init_cov)
 
     tX, ty, _, _ = load_sarcos()
     n = len(ty)
@@ -122,9 +127,8 @@ def run_sarcos(seed, block_size, thresh, npts=None, maxsec=3600):
     ty = ty.reshape((-1, 1))
 
     np.random.seed(seed)
-    CC = cluster_rpc((tX, ty), target_size=block_size)
-    SX, SY, block_boundaries = sort_by_cluster(CC)
-    SY = SY.flatten()
+    CC = cluster_rpc((tX, ty, np.arange((tX.shape[0]),)), target_size=block_size)
+    SX, SY, perm, block_boundaries = sort_by_cluster(CC)
 
     np.save(os.path.join(d, "SX.npy"), SX)
     np.save(os.path.join(d, "SY.npy"), SY)
@@ -145,15 +149,15 @@ def run_sarcos(seed, block_size, thresh, npts=None, maxsec=3600):
         total_pairs = len(mbcm.neighbors)
         f.write("total pairs %d, average neighbor count %.3f\n" % (total_pairs, mean_neighbor_count))
 
-    optimize_cov(d, mbcm, seed, maxsec)
+    optimize_cov(d, mbcm, seed, maxsec, init_cov)
 
 
-def eval_predict(seed, block_size, thresh, npts=None, 
+def eval_predict(seed, block_size, thresh, init_cov, npts=None, 
                  predict_from_fullX=True, ntest=-1):
 
     # for a given training set and cov, evaluate on test data
 
-    d = sarcos_exp_dir(seed, block_size, thresh, npts)
+    d = sarcos_exp_dir(seed, block_size, thresh, npts, init_cov)
     X, y, X_test, y_test = load_sarcos()
 
     if predict_from_fullX:
@@ -247,15 +251,16 @@ def main():
     parser.add_argument('--block_pts', dest='block_pts', default=300, type=int)
     parser.add_argument('--threshold', dest='threshold', default=0.0, type=float)
     parser.add_argument('--seed', dest='seed', default=0, type=int)
+    parser.add_argument('--init_cov', dest='init_cov', default="", type=str)
     parser.add_argument('--maxsec', dest='maxsec', default=3600, type=int)
     parser.add_argument('--analyze', dest='analyze', default=False, action="store_true")
     parser.add_argument('--predict_from_full', dest='predict_from_full', default=False, action="store_true")
     parser.add_argument('--ntest', dest='ntest', default=-1, type=int)
     args = parser.parse_args()
     if args.analyze:
-        eval_predict(args.seed, args.block_pts, args.threshold, args.npts, predict_from_fullX = args.predict_from_full, ntest=args.ntest)
+        eval_predict(args.seed, args.block_pts, args.threshold, npts=args.npts, init_cov=args.init_cov, predict_from_fullX = args.predict_from_full, ntest=args.ntest)
     else:
-        run_sarcos(args.seed, args.block_pts, args.threshold, args.npts, args.maxsec)
+        run_sarcos(args.seed, args.block_pts, args.threshold, npts=args.npts, maxsec=args.maxsec, init_cov=args.init_cov)
 
 if __name__ == "__main__":
     main()
