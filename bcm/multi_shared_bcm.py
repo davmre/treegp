@@ -630,6 +630,10 @@ class MultiSharedBCM(object):
         n, dx = X.shape
         dy = Y.shape[1]
 
+
+        gradX = np.array(())
+        gradC = np.array(())
+
         # if we're nonstationary by adding precision matrices (symmetrizing BCM predictions),
         # just average the two results
         if block_j is not None and self.nonstationary and self.nonstationary_prec:
@@ -656,24 +660,31 @@ class MultiSharedBCM(object):
             K = self.kernel(X, block=block_i)
 
         prec = np.linalg.inv(K)
+        Alpha = np.dot(prec, Y)
 
-        """
-        I = np.dot(prec, K)
-        Z = I - np.eye(I.shape[0])
-        numerical_error = np.max(np.abs(Z))
-        if numerical_error > 1e-6:
+        k1 = np.abs(np.dot(prec[0, :], K[:, 0]) - 1)
+        k2 = np.abs(np.dot(prec[0, :], K[:, 1]))
+        k3 = np.abs(np.dot(prec[1, :], K[:, 0]))
+        k4 = np.abs(np.dot(prec[1, :], K[:, 1]) - 1)
+        numerical_error = np.max((k1, k2, k3, k4))
+        if numerical_error > 1e-4:
             raise ValueError("numerical error of %f" % numerical_error)
-        """
+            print "numerical failure in gaussian_llgrad, ks %.4f %.4f %.4f %.4f" % (k1, k2, k3, k4)
+            ll = -1e10
+            
+            if grad_X:
+                gradX = np.zeros((n, dx))
+            if grad_cov:
+                ncov_base = 2 + self.X.shape[1]
+                ncov = ncov_base if block_j is None else ncov_base*2
+                gradC = -np.ones((ncov,))
 
-        Alpha = np.linalg.solve(K, Y)
-        #Alpha = np.dot(prec, Y)
+            return ll, gradX, gradC
 
         ll = -.5 * np.sum(Y*Alpha)
         ll += -.5 * dy * np.linalg.slogdet(K)[1]
         ll += -.5 * dy * n * np.log(2*np.pi)
 
-
-        gradX = np.array(())
         if grad_X:
             gradX = np.zeros((n, dx))
             dcv = np.zeros((X.shape[0]), dtype=np.float)
@@ -719,7 +730,7 @@ class MultiSharedBCM(object):
                     gradX[p,i] = dll
             t1 = time.time()
 
-        gradC = np.array(())
+
         if grad_cov:
             ncov_base = 2 + self.X.shape[1]
             ncov = ncov_base if block_j is None else ncov_base*2
