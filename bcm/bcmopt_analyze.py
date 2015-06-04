@@ -1,6 +1,6 @@
 from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic
 from treegp.bcm.local_regression import BCM
-from treegp.bcm.bcmopt import SampledData, exp_dir
+from treegp.bcm.bcmopt import SampledData, exp_dir, dump_covs
 
 from treegp.gp import GPCov, GP, mcov, prior_sample, dgaussian
 from treegp.util import mkdir_p
@@ -118,7 +118,7 @@ def fixedsize_run_params(lscale=0.4, obs_std=0.1):
     base_params = {'ntrain': ntrain, 'n': n, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'nblocks': 1, 'task': 'x', 'noise_var': 0.01}
 
     runs = {'GP': base_params}
-    block_counts = [4, 9, 16, 25, 36, 49]
+    block_counts = [4, 9, 16, 25, 36, ]
     for bc in block_counts:
         rfp = base_params.copy()
         rfp['nblocks'] = bc
@@ -252,15 +252,15 @@ def cov_run_params_hard():
 
 def xcov_run_params():
 
-    #lscales = [0.4, 0.1, 0.02]
+    lscales = [0.4, 0.1,]
     noise_var = 0.01
-    lscale = 0.4
-    obs_stds = [0.2, 0.1, 0.02]
+    #lscale = 0.4
+    obs_std = 0.02
 
     runs = []
-    for obs_std in obs_stds:
+    for lscale in lscales:
         for init_seed in range(3):
-            run_gprf = {'ntrain': 15000, 'n': 15500, 'lscale': lscale, 'obs_std': obs_std, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'tnc', 'nblocks': 49, 'task': 'xcov', 'init_seed': init_seed, 'noise_var': noise_var}
+            run_gprf = {'ntrain': 15000, 'n': 15500, 'lscale': lscale, 'obs_std': obs_std, 'yd': 50, 'seed': 0, 'local_dist': 0.05, "method": 'l-bfgs-b', 'nblocks': 49, 'task': 'xcov', 'init_seed': init_seed, 'noise_var': noise_var}
             run_full = run_gprf.copy()
             run_full['nblocks'] = 1
 
@@ -315,18 +315,22 @@ def gen_runs():
     #runs_growing = np.concatenate(growing_run_params())
 
     runs_cov = cov_run_params_hard()
-    runs_xcov = xcov_run_params()
+    #runs_xcov = xcov_run_params()
 
-    all_runs = np.concatenate([runs_cov, runs_xcov])
+    #all_runs = np.concatenate([runs_cov, runs_xcov])
+    #all_runs = runs_xcov
 
-    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "runexp2.sh", analyze=False)
-    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "analyze2.sh", analyze=True)
+    for run in runs_cov:
+        dump_covs(exp_dir(run))        
+
+    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "runexp3.sh", analyze=False)
+    #gen_runexp(all_runs, "python python/bcm/treegp/bcm/bcmopt.py", "analyze3.sh", analyze=True)
 
     # get fixedsize runs
     # get variable runs
     # conglomerate them into a list of run params
     # call gen_runexp twice to generate a run script and an analysis script
-    plot_models_fixedsize(lscale=0.1, obs_std=0.02)
+    #plot_models_fixedsize(lscale=0.1, obs_std=0.02)
     
 
 def main():
