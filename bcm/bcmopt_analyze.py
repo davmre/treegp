@@ -43,11 +43,11 @@ def read_result_line(s):
     for lbl, col in RESULT_COLS.items():
         p = parts[col]
         if p=="trueX": continue
-        intP = int(p)
-        floatP = float(p)
-        if float(intP) == floatP:
+        try:
+            intP = int(p)
             r[lbl] = intP
-        else:
+        except:
+            floatP = float(p)
             r[lbl] = floatP
     return r
 
@@ -79,6 +79,42 @@ def load_plot_data(runs, target="predll", running_best=True):
         plot_data[label] = (t, y)
 
     return plot_data
+
+def vis_points(run=None, d=None, sdata_file=None, y_target=0):
+
+    if d is None:
+        d = exp_dir(run)    
+
+    if sdata_file is not None:
+        with open(sdata_file, 'rb') as f:
+            sdata = pickle.load(f)
+
+    for fname in sorted(os.listdir(d)):
+        if not fname.startswith("step") or not fname.endswith("_X.npy"): continue
+        X = np.load(os.path.join(d,fname))
+
+        fig = Figure(dpi=144)
+        fig.patch.set_facecolor('white')
+        ax = fig.add_subplot(111)
+
+        cmap = "jet"
+        if y_target==-1:
+            # plot "wrongness"
+            c = np.sqrt(np.sum((X - sdata.SX)**2, axis=1))
+            cmap="hot"
+        elif sdata_file is None:
+            c = None
+        else:
+            c = sdata.SY[:, y_target]
+        ax.scatter(X[:, 0], X[:, 1], alpha=0.2, c=c, cmap=cmap)
+
+        canvas = FigureCanvasAgg(fig)
+
+        out_name = os.path.join(d, fname[:-4] + ".png")
+        fig.savefig(out_name)
+        print "wrote", out_name
+
+        
 
 def write_plot(plot_data, out_fname, xlabel="Time (s)", 
                ylabel="", ylim=None, plot_args = None):
@@ -196,11 +232,22 @@ def plot_models_growing():
     predll_true_local = []
     predll_true_gprf = []
     predll_true_full = []
+    ntrains = []
+
     for (gprf, local, full) in zip(runs_gprf, runs_local, runs_full):
+
+        ntrains.append(gprf['ntrain'])
 
         def process(stuff, times, mads, predlls, predlls_true):
             d = exp_dir(stuff)
             r = load_results(d)
+            if len(r) == 0:
+                times.append(0)
+                mads.append(0)
+                predlls.append(0)
+                predlls_true.append(0)
+                return
+
             times.append(np.mean(np.diff(r[:, 1])))
             fr, tr = load_final_results(d)
             mads.append(fr['mad'])
@@ -212,17 +259,17 @@ def plot_models_growing():
         process(full, times_full, mad_full, predll_full, predll_true_full)
 
     pd_times = {'GPRF': (ntrains, times_gprf),
-                'Local': {ntrains, times_local},
-                "GP": {trains, times_full}}
+                'Local': (ntrains, times_local),
+                "GP": (ntrains, times_full)}
     pd_mad = {'GPRF': (ntrains, mad_gprf),
-                'Local': {ntrains, mad_local},
-                "GP": {trains, mad_full}}
+                'Local': (ntrains, mad_local),
+                "GP": (ntrains, mad_full)}
     pd_predll = {'GPRF': (ntrains, predll_gprf),
-                'Local': {ntrains, predll_local},
-                "GP": {trains, predll_full}}
+                'Local': (ntrains, predll_local),
+                 "GP": (ntrains, predll_full)}
     pd_predll_true = {'GPRF': (ntrains, predll_true_gprf),
-                'Local': {ntrains, predll_true_local},
-                "GP": {trains, predll_true_full}}
+                'Local': (ntrains, predll_true_local),
+                      "GP": (ntrains, predll_true_full)}
 
     write_plot(pd_times, "times.png", xlabel="n", ylabel="gradient evaluation time (s)")
     write_plot(pd_mad, "mad.png", xlabel="n", ylabel="X locations: mean absolute deviation")
@@ -326,8 +373,9 @@ def gen_runs():
     # get variable runs
     # conglomerate them into a list of run params
     # call gen_runexp twice to generate a run script and an analysis script
-    plot_models_fixedsize(lscale=0.1, obs_std=0.02)
-    
+    #plot_models_fixedsize(lscale=0.4, obs_std=0.1)
+    #plot_models_growing()
+    vis_points(d="bcmopt_experiments/15000_15550_36_0.40_0.10_0.050_50_l-bfgs-b_x_-1", y_target=-1, sdata_file='bcmopt_experiments/synthetic_datasets/15550_15000_0.40_0.100_50_4.pkl')
 
 def main():
     gen_runs()
