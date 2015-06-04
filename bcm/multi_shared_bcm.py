@@ -666,6 +666,11 @@ class MultiSharedBCM(object):
 
         if test_cov is None:
             test_cov = self.cov
+            test_ptree = self.predict_tree
+        else:
+            dummy_X = np.array([[0.0,] * self.X.shape[1],], dtype=float)
+            test_ptree = VectorTree(dummy_X, 1, test_cov.dfn_str, test_cov.dfn_params, 
+                                    test_cov.wfn_str, test_cov.wfn_params)
 
         block_Kinvs = []
         block_Alphas = []
@@ -681,7 +686,8 @@ class MultiSharedBCM(object):
 
         def predict(Xstar, test_noise_var=0.0, local=False):
 
-            prior_cov = mcov(Xstar, test_cov, test_noise_var)
+            prior_cov = test_ptree.kernel_matrix(Xstar, Xstar, False) 
+            prior_cov += np.eye(prior_cov.shape[0])*test_noise_var
             prior_prec = np.linalg.inv(prior_cov)
 
             prior_mean = np.zeros((Xstar.shape[0], Y.shape[1]))
@@ -709,13 +715,15 @@ class MultiSharedBCM(object):
                 mean = np.dot(Kstar, block_Alphas[i])
                 cov = Kss - np.dot(Kstar, np.dot(Kinv, Kstar.T))
                 prec = np.linalg.inv(cov)
-                message_prec = prec - np.linalg.inv(Kss)
+                pp = np.linalg.inv(Kss)
+                message_prec = prec - pp
                 weighted_mean = np.dot(prec, mean)
                 prior_mean += weighted_mean
                 prior_prec += message_prec
 
             final_cov = np.linalg.inv(prior_prec)
             final_mean = np.dot(final_cov, prior_mean)
+
             return final_mean, final_cov
 
         return predict
