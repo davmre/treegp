@@ -80,7 +80,7 @@ def load_plot_data(runs, target="predll", running_best=True):
 
     return plot_data
 
-def vis_points(run=None, d=None, sdata_file=None, y_target=0):
+def vis_points(run=None, d=None, sdata_file=None, y_target=0, seed=None, blocksize=None):
 
     if d is None:
         d = exp_dir(run)    
@@ -102,6 +102,17 @@ def vis_points(run=None, d=None, sdata_file=None, y_target=0):
             # plot "wrongness"
             c = np.sqrt(np.sum((X - sdata.SX)**2, axis=1))
             cmap="hot"
+        elif y_target==-2:
+            # plot blocks
+            c = np.zeros((X.shape[0]))
+
+            np.random.seed(seed)
+            sdata.cluster_rpc(blocksize)
+
+            block_colors = np.linspace(0.0, 1.0, len(sdata.block_boundaries))
+            for i, (i_start, i_end) in enumerate(sdata.block_boundaries):
+                c[i_start:i_end] = block_colors[i]
+            #c = np.sqrt(np.sum((X - sdata.SX)**2, axis=1))
         elif sdata_file is None:
             c = None
         else:
@@ -424,7 +435,18 @@ def gen_runs():
     #plot_models_fixedsize(lscale=0.1, obs_std=0.02)
     
 def main():
-    gen_runs()
+    if sys.argv[1] =="vis":
+        y_target = -1
+        seed = None
+        blocksize = None
+        if len(sys.argv) > 4:
+            y_target = int(sys.argv[4])
+            if len(sys.argv) > 5:
+                seed = int(sys.argv[5])
+                blocksize = int(sys.argv[6])
+        vis_points(d=sys.argv[2], y_target=y_target, sdata_file=sys.argv[3], seed=seed, blocksize=blocksize)
+    else:
+        gen_runs()
 
 if __name__ =="__main__":
     main()
