@@ -197,7 +197,9 @@ def pair_distances(Xi, Xj):
 
 class MultiSharedBCM(object):
 
-    def __init__(self, X, Y, block_boundaries, cov, noise_var, kernelized=False, dy=None, neighbor_threshold=1e-3, nonstationary=False, nonstationary_prec=False):
+    def __init__(self, X, Y, block_boundaries, cov, noise_var, kernelized=False, dy=None,
+                 neighbor_threshold=1e-3, nonstationary=False, nonstationary_prec=False,
+                 block_centers=None, diag_connections=False):
         self.X = X
 
         if kernelized:
@@ -225,10 +227,13 @@ class MultiSharedBCM(object):
             self.block_trees = [predict_tree for i in range(self.n_blocks)]
             self.nonstationary_prec=nonstationary_prec
 
-        self.compute_neighbors(threshold=neighbor_threshold)
+        if block_centers is not None:
+            self.block_neighbors(block_centers, diag=diag_connections)
+        else:
+            self.compute_neighbors(threshold=neighbor_threshold)
         self.neighbor_threshold = neighbor_threshold
 
-    def compute_neighbors(self, threshold=1e-3):
+    def block_neighbors(self, centers, diag=False, threshold=1e-3):
         neighbor_count = defaultdict(int)
         neighbors = []
 
@@ -236,27 +241,70 @@ class MultiSharedBCM(object):
             self.neighbor_count = neighbor_count
             self.neighbors = neighbors
             return
-            
+
+        center_distances = pair_distances(centers, centers)
+        min_dist = np.min(center_distances) + 1e-6
+        diag_dist = np.min(center_distances[center_distances > min_dist]) + 1e-6
+        connect_dist = diag_dist if diag else min_dist
+
+        for i in range(self.n_blocks):
+            for j in range(i):
+                if center_distances[i,j] < connect_dist:
+                    neighbors.append((i,j))
+                    neighbor_count[i] += 1
+                    neighbor_count[j] += 1
+
+        self.neighbor_count = neighbor_count
+        self.neighbors = neighbors
+
+    def compute_neighbors(self, threshold=1e-3, threshold_Q=False):
+        neighbor_count = defaultdict(int)
+        neighbors = []
+
+        if threshold < 1e-8:
+            self.neighbor_count = neighbor_count
+            self.neighbors = neighbors
+            return
+
+
+        #D = pair_distances(self.X, self.X)
 
         for i in range(self.n_blocks):
             i_start, i_end = self.block_boundaries[i]
-            Xi = self.X[i_start:i_end]
-            ni = Xi.shape[0]
+            X1 = self.X[i_start:i_end]
             for j in range(i):
                 j_start, j_end = self.block_boundaries[j]
-                Xj = self.X[j_start:j_end]
-                #Kij = self.kernel(Xi, X2=Xj)
-                #maxk = np.max(np.abs(Kij))
+                X2 = self.X[j_start:j_end]
+
+                if threshold_Q:
+                    ni = i_end-i_start
+                    nj - j_end-j_start
+                    n = ni+nj
+                    K = np.empty((n,n))
+                    K[:i_end, :i_end] = self.kernel(X1)
+                    K[i_end:, i:end] = self.kernel(X2)
+                    K[:i_end, i_end:] = self.kernel(X1, X2=X2)
+                    K[i_end:, :i_end] = K[:i_end, i_end:].T
+                    Q = np.linalg.inv(K)
+                    Qij = Q[:i_start, i_start:]
+                    maxk = np.max(np.abs(Qij))
+                else:
+                    Kij = self.kernel(X1, X2=X2)
+                    maxk = np.max(np.abs(Kij))
+
+                if maxk > threshold:
+                    neighbors.append((i,j))
+                    neighbor_count[i] += 1
+                    neighbor_count[j] += 1
 
                 # use a distance-based threshold instead of
                 # kernel-based to eliminate complications of
                 # nonstationary kernels.
-                Dij = pair_distances(Xi, Xj)
-                mind = np.min(Dij)
-                if mind < threshold:
-                    neighbors.append((i,j))
-                    neighbor_count[i] += 1
-                    neighbor_count[j] += 1
+                #
+                #Dij = D[i_start:i_end, j_start:j_end]
+                #mind = np.min(Dij)
+            if i % 10 == 0:
+                print "%d: neighbors count %d" % (i, neighbor_count[i])
         self.neighbor_count = neighbor_count
         self.neighbors = neighbors
 
@@ -610,10 +658,6 @@ class MultiSharedBCM(object):
         #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, gradX, gradC
 
-    def train_predictor_nonstationary(self):
-        # train a GP on the
-
-        def nonstationary_cov_from_gp(X, centers, covs)
 
     def train_predictor(self, test_cov=None, Y=None):
 

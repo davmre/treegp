@@ -1,4 +1,4 @@
-from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic, sample_synthetic_bcm_new
+from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker
 import numpy as np
 from treegp.gp import GP, GPCov, mcov, dgaussian, dgaussian_rank1
 import time
