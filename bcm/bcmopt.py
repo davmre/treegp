@@ -287,13 +287,35 @@ def load_log(d):
 
     return np.asarray(steps), np.asarray(times), np.asarray(lls)
 
+def dump_covs(d):
+    steps, times, lls = load_log(d)
+
+    cov_fname = os.path.join(d, "covs.txt")
+    print "writing to", cov_fname
+    covs = open(cov_fname, 'w')
+
+    for i, step in enumerate(steps):
+        try:
+            fname_cov = os.path.join(d, "step_%05d_cov.npy" % step)
+            FC = np.load(fname_cov)
+
+            s = "%d %s" % (step, FC)
+            print s
+            covs.write(s + "\n")
+        except IOError:
+            FC = None
+
+    covs.close()
+
 def analyze_run(d, sdata, local_dist=1.0):
 
     steps, times, lls = load_log(d)
 
     rfname = os.path.join(d, "results.txt")
+
     results = open(rfname, 'w')
     print "writing results to", rfname
+
     for i, step in enumerate(steps):
         try:
             fname_X = os.path.join(d, "step_%05d_X.npy" % step)
