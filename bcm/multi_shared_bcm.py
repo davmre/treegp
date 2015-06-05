@@ -66,6 +66,9 @@ def sample_crazy_shape(seed, n, std=0.005):
 
     np.random.seed(seed)
 
+    if seed % 1000 > 4:
+        std = 0.27386127875258309 / np.sqrt(n)
+
     def sample_X(n=1000):
         X1 = sample_points_line(n/2, (0.1, 0.1), (0.9, 0.9))
         X2 = sample_points_line(n/2, (0.1, 0.9), (0.9, 0.1))
@@ -88,6 +91,23 @@ def sample_crazy_shape(seed, n, std=0.005):
             v = 0.4 * v / np.linalg.norm(v)
             X1 = sample_points_line(n/4, x1, x1+v)
             Xs.append(X1)
+        return np.vstack(Xs)
+
+    def sample_crazy_lines(n=1000):
+        seg_npts = 250
+        segments = n / seg_npts
+        segment_len = 41.10960958218894 / np.sqrt(n) # length 1.3 at 1000 pts
+
+        Xs = []
+        for i in range(segments):
+            while True:
+                x1 = np.random.rand(2)
+                v = np.random.rand(2)
+                v /= np.linalg.norm(v)
+                x2 = x1 + v * segment_len
+                if x2[0] > 0 and x2[0] < 1 and x2[1] > 0 and x2[1] < 1:
+                    Xs.append(sample_points_line(seg_npts, x1, x2))
+                    break
         return np.vstack(Xs)
 
     def sample_points_line(n, x1, x2, std=0.005):
@@ -135,7 +155,9 @@ def sample_crazy_shape(seed, n, std=0.005):
         return sample_X(n=n)
     elif seed < 1300:
         return sample_diamond(n=n)
-
+    elif seed < 1400:
+        return sample_crazy_lines(n=n)
+        
 
 def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):
     # sample data from the prior

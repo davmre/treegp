@@ -261,6 +261,36 @@ def fault_run_params():
     return runs_gprf+runs_full
 
 
+def crazylines_run_params():
+    yd = 50
+    seed = 1305
+    method = "l-bfgs-b"
+    ntest  = 500
+
+    ntrains = [1000, 3000, 5000, 10000, 15000, 20000]
+    rpc_sizes = [200, 1000]
+    local_dists = [0.0, 0.001, 0.01]
+
+    x = ntrains
+    runs_gprf = []
+    runs_local = []
+    runs_full = []
+
+    for ntrain in ntrains:
+        lscale = 5.4772255750516621 / np.sqrt(ntrain)
+        obs_std = 1.0954451150103324 / np.sqrt(ntrain)
+
+        run_params_full = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': 0.05, "method": method, 'nblocks': 1, 'task': 'x', 'noise_var': 0.01}
+        runs_full.append(run_params_full)
+
+        for rpc_size in rpc_sizes:
+            for local_dist in local_dists:
+                run_params_gprf = {'ntrain': ntrain, 'n': ntrain+ntest, 'lscale': lscale, 'obs_std': obs_std, 'yd': yd, 'seed': seed, 'local_dist': local_dist, "method": method, 'rpc_blocksize': rpc_size, 'task': 'x', 'noise_var': 0.01}
+                runs_gprf.append(run_params_gprf)
+
+    return runs_gprf+runs_full
+
+
 
 def plot_models_growing():
 
@@ -410,9 +440,10 @@ def gen_runs():
     runs_cov = cov_run_params_hard()
     #runs_xcov = xcov_run_params()
 
-    runs_fault = fault_run_params()
-    gen_runexp(runs_fault, "python python/bcm/treegp/bcm/bcmopt.py", "run_fault.sh", analyze=False)
-    gen_runexp(runs_fault, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_fault.sh", analyze=True)
+    #runs_fault = fault_run_params()
+    runs_lines = crazylines_run_params()
+    gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "run_lines.sh", analyze=False)
+    gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
 
     #all_runs = np.concatenate([runs_cov, runs_xcov])
     #all_runs = runs_xcov
@@ -435,7 +466,7 @@ def gen_runs():
     #plot_models_fixedsize(lscale=0.1, obs_std=0.02)
     
 def main():
-    if sys.argv[1] =="vis":
+    if len(sys.argv) > 1 and sys.argv[1] =="vis":
         y_target = -1
         seed = None
         blocksize = None
