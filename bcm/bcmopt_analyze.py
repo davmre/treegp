@@ -128,7 +128,7 @@ def vis_points(run=None, d=None, sdata_file=None, y_target=0, seed=None, blocksi
         
 
 def write_plot(plot_data, out_fname, xlabel="Time (s)", 
-               ylabel="", ylim=None, plot_args = None):
+               ylabel="", ylim=None, xlim=None, plot_args = None):
 
     fig = Figure(dpi=144)
     fig.patch.set_facecolor('white')
@@ -144,6 +144,8 @@ def write_plot(plot_data, out_fname, xlabel="Time (s)",
 
     if ylim is not None:
         ax.set_ylim(ylim)
+    if xlim is not None:
+        ax.set_xlim(xlim)
 
     ax.legend()
 
@@ -158,7 +160,7 @@ def fixedsize_run_params(lscale=0.4, obs_std=0.1):
     ntrain = 15000
     n = 15550
     yd = 50
-    seed=4
+    seed=0
     local_dist=0.05
     method="l-bfgs-b"
 
@@ -188,10 +190,13 @@ def plot_models_fixedsize(**kwargs):
 
     def plot_args(label):
         args = {}
+        colors = {1: "black", 4: "red", 9: "green", 16: "blue", 25: "purple", 36: "orange", 49: "brown"}
         if "Local" in label:
             args['linestyle'] = '--'
+            args['color'] = colors[np.abs(int(label[-2:]))]
         elif "GPRF" in label:
             args['linestyle'] = '-'
+            args['color'] = colors[np.abs(int(label[-2:]))]
         elif label==GP:
             args['linestyle'] = '.'
         return args
@@ -199,7 +204,7 @@ def plot_models_fixedsize(**kwargs):
     for target in ("predll", "predll_neighbors", "mad"):
         plot_data = load_plot_data(runs, target=target)
         write_plot(plot_data, out_fname="fixedsize_%s.png" % target, 
-                   ylabel=target, ylim=ylims[target], plot_args=plot_args)
+                   ylabel=target, ylim=ylims[target], plot_args=plot_args, xlim=(0, 1800))
 
 def growing_run_params():
     yd = 50
@@ -231,7 +236,7 @@ def growing_run_params():
 
 
 def seismic_run_params():
-    npts = [500, 1000, 3000, 5000, 8000, 10000, 13000]
+    npts = [1000, 5000, 10000, 13000]
     rpc_sizes = [200, 800]
     thresholds = [0.0, 0.001, 0.1]
 
@@ -460,16 +465,16 @@ def gen_runs():
 
     #runs_growing = np.concatenate(growing_run_params())
 
-    runs_cov = cov_run_params_hard()
+    #runs_cov = cov_run_params_hard()
     #runs_xcov = xcov_run_params()
 
     #runs_fault = fault_run_params()
-    runs_lines = crazylines_run_params()
+    #runs_lines = crazylines_run_params()
     #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "run_lines.sh", analyze=False)
     #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
 
-    runs_seismic = seismic_run_params()
-    gen_runexp(runs_seismic, "python python/bcm/treegp/bcm/run_seismic.py", "run_seismic.sh", analyze=False, maxsec=14400)
+    #runs_seismic = seismic_run_params()
+    #gen_runexp(runs_seismic, "python python/bcm/treegp/bcm/run_seismic.py", "run_seismic.sh", analyze=False, maxsec=7200)
     #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
 
 
@@ -487,7 +492,7 @@ def gen_runs():
     # conglomerate them into a list of run params
     # call gen_runexp twice to generate a run script and an analysis script
 
-    #plot_models_fixedsize(lscale=0.4, obs_std=0.1)
+    plot_models_fixedsize(lscale=0.4, obs_std=0.1)
     #plot_models_growing()
     #vis_points(d="bcmopt_experiments/5000_5500_000250_0.05_0.02_0.000_50_l-bfgs-b_x_-1/", y_target=1, sdata_file="bcmopt_experiments/synthetic_datasets/5500_5000_0.05_0.020_50_1001.pkl")
 
