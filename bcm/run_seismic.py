@@ -1,6 +1,6 @@
 from treegp.bcm.multi_shared_bcm import MultiSharedBCM, Blocker, sample_synthetic
 from treegp.bcm.local_regression import BCM
-from treegp.bcm.bcmopt import cluster_rpc, sort_by_cluster, OutOfTimeError
+from treegp.bcm.bcmopt import cluster_rpc, sort_by_cluster, OutOfTimeError, load_log
 
 from treegp.gp import GPCov, GP, mcov, prior_sample, dgaussian
 from treegp.util import mkdir_p
@@ -14,14 +14,59 @@ import sys
 import cPickle as pickle
 import argparse
 
+def dist_deg(loc1, loc2):
+    """
+    Compute the great circle distance between two point on the earth's surface
+    in degrees.
+    loc1 and loc2 are pairs of longitude and latitude
+    >>> int(dist_deg((10,0), (20, 0)))
+    10
+    >>> int(dist_deg((10,0), (10, 45)))
+    45
+    >>> int(dist_deg((-78, -12), (-10.25, 52)))
+    86
+    >>> dist_deg((132.86521, -0.45606493), (132.86521, -0.45606493)) < 1e-4
+    True
+    >>> dist_deg((127.20443, 2.8123965), (127.20443, 2.8123965)) < 1e-4
+    True
+    """
+    lon1, lat1 = loc1
+    lon2, lat2 = loc2
 
-from sigvisa.utils.geog import dist_km
+    rlon1 = np.radians(lon1)
+    rlat1 = np.radians(lat1)
+    rlon2 = np.radians(lon2)
+    rlat2 = np.radians(lat2)
+
+    dist_rad = 2*np.arcsin( \
+        np.sqrt( \
+            np.sin((rlat1-rlat2)/2.0)**2 + \
+            np.cos(rlat1)*np.cos(rlat2)*   \
+            np.sin((rlon1-rlon2)/2.0)** 2) \
+                      )
+    return np.degrees(dist_rad)
+
+AVG_EARTH_RADIUS_KM = 6371.0
+def dist_km(loc1, loc2):
+    """
+    Returns the distance in km between two locations specified in degrees
+    loc = (longitude, latitude)
+    """
+    lon1, lat1 = loc1
+    lon2, lat2 = loc2
+
+
+    d = np.radians(dist_deg(loc1, loc2)) * AVG_EARTH_RADIUS_KM
+
+    return d
 
 COL_IDX, COL_EVID, COL_LON, COL_LAT, COL_SMAJ, COL_SMIN, COL_STRIKE, COL_DEPTH, COL_DEPTHERR = np.arange(9)
 
+
+
 def load_seismic_locations():
-    fname = "/home/dmoore/python/sigvisa/clusters/aligned_data.npy"
-    fnameY = "/home/dmoore/python/sigvisa/clusters/aligned_Y.npy"
+    fname = os.path.join(os.environ['HOME'],"aligned_data.npy")
+    fnameY = os.path.join(os.environ['HOME'], "aligned_Y.npy")
     d=  np.load(fname)
     Y=  np.load(fnameY)
     return d, Y

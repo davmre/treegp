@@ -230,6 +230,29 @@ def growing_run_params():
     return runs_gprf, runs_local, runs_full
 
 
+def seismic_run_params():
+    npts = [500, 1000, 3000, 5000, 8000, 10000, 13000]
+    rpc_sizes = [200, 800]
+    thresholds = [0.0, 0.001, 0.1]
+
+    runs_full = []
+    runs_gprf = []
+    init_cov = "seismic_experiments/3000_300_0.0000_default_cov/step_00033_cov.npy"
+    for n in npts:
+        if n < 8000:
+            run_params_full = {'n': n, 'threshold': 0.00, 'task': 'x', 'rpc_blocksize': -1, 'init_cov': init_cov}
+            runs_full.append(run_params_full)
+
+        for rpc_size in rpc_sizes:
+            if rpc_size > n: 
+                continue
+            for threshold in thresholds:
+                run_params_gprf = {'n': n, 'threshold': threshold, 'task': 'x', 'rpc_blocksize': rpc_size, 'init_cov': init_cov}
+                runs_gprf.append(run_params_gprf)
+
+    return runs_full+runs_gprf
+
+
 def fault_run_params():
     yd = 50
     seed = 1004
@@ -442,8 +465,13 @@ def gen_runs():
 
     #runs_fault = fault_run_params()
     runs_lines = crazylines_run_params()
-    gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "run_lines.sh", analyze=False)
-    gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
+    #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "run_lines.sh", analyze=False)
+    #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
+
+    runs_seismic = seismic_run_params()
+    gen_runexp(runs_seismic, "python python/bcm/treegp/bcm/run_seismic.py", "run_seismic.sh", analyze=False, maxsec=14400)
+    #gen_runexp(runs_lines, "python python/bcm/treegp/bcm/bcmopt.py", "analyze_lines.sh", analyze=True)
+
 
     #all_runs = np.concatenate([runs_cov, runs_xcov])
     #all_runs = runs_xcov
