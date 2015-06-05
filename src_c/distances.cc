@@ -301,6 +301,11 @@ double w_e(double d, const double * variance) {
   return variance[0] * exp(-1 * d);
 }
 
+double deriv_matern32_wrt_r(double r, double dr_dtheta, const double *variance) {
+  double sqrt3 = 1.73205080757;
+  return variance[0] * exp(-sqrt3 * r) * -3 * r * dr_dtheta;
+}
+
 double w_matern32(double d, const double * variance) {
   double sqrt3 = 1.73205080757;
   return variance[0] * (1 + sqrt3*d) * exp(-sqrt3 * d);

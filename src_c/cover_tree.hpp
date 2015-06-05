@@ -67,6 +67,7 @@ double w_e(double d, const double * variance);
 double w_matern32(double d, const double * variance);
 double w_matern32_upper(double d, const double * variance);
 double w_matern32_lower(double d, const double * variance);
+double deriv_matern32_wrt_r(double r, double dr_dtheta, const double *variance);
 double w_compact_q0(double d, const double * extra);
 double w_compact_q0_upper(double d, const double * extra);
 double w_compact_q0_lower(double d, const double * extra);

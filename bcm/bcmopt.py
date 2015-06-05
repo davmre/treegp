@@ -16,7 +16,7 @@ import argparse
 EXP_DIR = os.path.join(os.environ["HOME"], "bcmopt_experiments")
 
 
-def sample_data(n, ntrain, lscale, obs_std, yd, seed, 
+def sample_data(n, ntrain, lscale, obs_std, yd, seed,
                 centers, noise_var, rpc_blocksize=-1):
     sample_basedir = os.path.join(os.environ["HOME"], "bcmopt_experiments", "synthetic_datasets")
     mkdir_p(sample_basedir)
@@ -153,7 +153,7 @@ class SampledData(object):
             ll += -.5 * ntest * yd * np.log(2*np.pi)
 
         return ll / (ntest * yd)
-        
+
 
     def x_prior(self, xx):
         flatobs = self.X_obs.flatten()
@@ -375,6 +375,14 @@ def sort_by_cluster(clusters):
         n += cn
     return SX, SY, perm, block_boundaries
 
+def cluster_rpc_kernelized(X, YY, target_size):
+    n = X.shape[0]
+    p = np.arange(n)
+    CC = cluster_rpc((X, p.copy(), p.copy()), target_size)
+    SX, SY, perm, block_boundaries = sort_by_cluster(CC)
+    SYY = YY[perm, :][:, perm]
+    return SX, SYY, perm, block_boundaries
+
 def cluster_rpc((X, y, perm), target_size):
     n = X.shape[0]
     if n < target_size:
@@ -402,7 +410,7 @@ def cluster_rpc((X, y, perm), target_size):
 def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
            fullgp=False, method=None,
            obs_std=None, local_dist=1.0, maxsec=3600,
-           task='x', analyze_only=False, init_seed=-1, 
+           task='x', analyze_only=False, init_seed=-1,
            noise_var=0.01, rpc_blocksize=-1):
 
     if rpc_blocksize==-1:

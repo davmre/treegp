@@ -18,6 +18,14 @@ from treegp.cover_tree import VectorTree
 import pyublas
 
 
+def check_inv(prec, K):
+    k1 = np.abs(np.dot(prec[0, :], K[:, 0]) - 1)
+    k2 = np.abs(np.dot(prec[0, :], K[:, 1]))
+    k3 = np.abs(np.dot(prec[1, :], K[:, 0]))
+    k4 = np.abs(np.dot(prec[1, :], K[:, 1]) - 1)
+    numerical_error = np.max((k1, k2, k3, k4))
+    return numerical_error
+
 class Blocker(object):
 
     def __init__(self, block_centers):
@@ -55,7 +63,7 @@ class Blocker(object):
             return sorted_X, perm, block_boundaries
 
 def sample_crazy_shape(seed, n, std=0.005):
-    
+
     np.random.seed(seed)
 
     def sample_X(n=1000):
@@ -129,7 +137,7 @@ def sample_crazy_shape(seed, n, std=0.005):
         return sample_diamond(n=n)
 
 
-def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):    
+def sample_synthetic(seed=1, n=400, xd=2, yd=10, lscale=0.1, noise_var=0.01):
     # sample data from the prior
     if seed < 1000:
         np.random.seed(seed)
@@ -348,6 +356,9 @@ class MultiSharedBCM(object):
 
         #D = pair_distances(self.X, self.X)
 
+
+        wfn_var = self.cov.wfn_params[0]
+
         for i in range(self.n_blocks):
             i_start, i_end = self.block_boundaries[i]
             X1 = self.X[i_start:i_end]
@@ -360,15 +371,15 @@ class MultiSharedBCM(object):
                     nj - j_end-j_start
                     n = ni+nj
                     K = np.empty((n,n))
-                    K[:i_end, :i_end] = self.kernel(X1)
-                    K[i_end:, i:end] = self.kernel(X2)
-                    K[:i_end, i_end:] = self.kernel(X1, X2=X2)
+                    K[:i_end, :i_end] = self.kernel(X1)/wfn_var
+                    K[i_end:, i:end] = self.kernel(X2)/wfn_var
+                    K[:i_end, i_end:] = self.kernel(X1, X2=X2)/wfn_var
                     K[i_end:, :i_end] = K[:i_end, i_end:].T
                     Q = np.linalg.inv(K)
                     Qij = Q[:i_start, i_start:]
                     maxk = np.max(np.abs(Qij))
                 else:
-                    Kij = self.kernel(X1, X2=X2)
+                    Kij = self.kernel(X1, X2=X2)/wfn_var
                     maxk = np.max(np.abs(Kij))
 
                 if maxk > threshold:
@@ -386,12 +397,14 @@ class MultiSharedBCM(object):
                 print "%d: neighbors count %d" % (i, neighbor_count[i])
         self.neighbor_count = neighbor_count
         self.neighbors = neighbors
+        print "total pairs %d" % len(self.neighbors)
+
 
     def update_covs(self, covs):
         if not self.nonstationary:
             nv, sv = covs[0, :2]
             lscales = covs[0, 2:]
-            self.cov = GPCov(wfn_params=[sv,], dfn_params=lscales, dfn_str="euclidean", wfn_str="se")
+            self.cov = GPCov(wfn_params=[sv,], dfn_params=lscales, dfn_str=self.cov.dfn_str, wfn_str=self.cov.wfn_str)
             self.noise_var = nv
 
             dummy_X = np.array([[0.0,] * self.X.shape[1],], dtype=float)
@@ -403,7 +416,7 @@ class MultiSharedBCM(object):
             for block, covparams in enumerate(covs):
                 nv, sv = covparams[:2]
                 lscales = covparams[2:]
-                cov = GPCov(wfn_params=[sv,], dfn_params=lscales, dfn_str="euclidean", wfn_str="se")
+                cov = GPCov(wfn_params=[sv,], dfn_params=lscales, dfn_str=self.dfn_str, wfn_str="se")
                 block_covs.append((nv, cov))
                 pt = VectorTree(dummy_X, 1, cov.dfn_str, cov.dfn_params, cov.wfn_str, cov.wfn_params)
                 block_trees.append(pt)
@@ -661,22 +674,15 @@ class MultiSharedBCM(object):
 
         prec = np.linalg.inv(K)
         Alpha = np.dot(prec, Y)
-
-        k1 = np.abs(np.dot(prec[0, :], K[:, 0]) - 1)
-        k2 = np.abs(np.dot(prec[0, :], K[:, 1]))
-        k3 = np.abs(np.dot(prec[1, :], K[:, 0]))
-        k4 = np.abs(np.dot(prec[1, :], K[:, 1]) - 1)
-        numerical_error = np.max((k1, k2, k3, k4))
+        numerical_error = check_inv(prec, K)
         if numerical_error > 1e-4:
-            raise ValueError("numerical error of %f" % numerical_error)
             print "numerical failure in gaussian_llgrad, ks %.4f %.4f %.4f %.4f" % (k1, k2, k3, k4)
             ll = -1e10
-            
+
             if grad_X:
                 gradX = np.zeros((n, dx))
             if grad_cov:
-                ncov_base = 2 + self.X.shape[1]
-                ncov = ncov_base if block_j is None else ncov_base*2
+                ncov = 2 + len(self.cov.dfn_params)
                 gradC = -np.ones((ncov,))
 
             return ll, gradX, gradC
@@ -732,8 +738,7 @@ class MultiSharedBCM(object):
 
 
         if grad_cov:
-            ncov_base = 2 + self.X.shape[1]
-            ncov = ncov_base if block_j is None else ncov_base*2
+            ncov = 2 + len(self.cov.dfn_params)
             gradC = np.zeros((ncov,))
             for i in range(ncov):
                 if self.nonstationary and block_j is not None:
@@ -744,10 +749,8 @@ class MultiSharedBCM(object):
                 dlldi -= .5 * dy * np.sum(np.sum(np.multiply(prec, dKdi)))
                 gradC[i] = dlldi
 
-
         #print "llgrad %d pts %.4s" % (n, t1-t0)
         return ll, gradX, gradC
-
 
     def train_predictor(self, test_cov=None, Y=None):
 
@@ -759,7 +762,7 @@ class MultiSharedBCM(object):
             test_ptree = self.predict_tree
         else:
             dummy_X = np.array([[0.0,] * self.X.shape[1],], dtype=float)
-            test_ptree = VectorTree(dummy_X, 1, test_cov.dfn_str, test_cov.dfn_params, 
+            test_ptree = VectorTree(dummy_X, 1, test_cov.dfn_str, test_cov.dfn_params,
                                     test_cov.wfn_str, test_cov.wfn_params)
 
         block_Kinvs = []
@@ -776,7 +779,7 @@ class MultiSharedBCM(object):
 
         def predict(Xstar, test_noise_var=0.0, local=False):
 
-            prior_cov = test_ptree.kernel_matrix(Xstar, Xstar, False) 
+            prior_cov = test_ptree.kernel_matrix(Xstar, Xstar, False)
             prior_cov += np.eye(prior_cov.shape[0])*test_noise_var
             prior_prec = np.linalg.inv(prior_cov)
 
@@ -818,40 +821,66 @@ class MultiSharedBCM(object):
 
         return predict
 
-    def gaussian_llgrad_kernel(self, X, YY, dy=None, grad_X=False):
-        raise Exception("kernel llgrad is broken right now, need to implement grad_cov and nonstationary blocks")
+    def gaussian_llgrad_kernel(self, X, YY, dy=None, grad_X=False, grad_cov=False):
+        if self.nonstationary:
+            raise Exception("nonstationary not supported for kernel observations. (or at all, really).")
         n, dx = X.shape
         if dy is None:
             dy = self.dy
+        gradX = np.array(())
+        gradC = np.array(())
 
-        K = mcov(X, self.cov, self.noise_var)
+        K = self.kernel(X)
         Kinv = np.linalg.inv(K)
         prec = Kinv
+        numerical_error = check_inv(prec, K)
+        if numerical_error > 1e-4:
+            print "numerical failure in gaussian_llgrad, ks %.4f %.4f %.4f %.4f" % (k1, k2, k3, k4)
+            ll = -1e10
+
+            if grad_X:
+                gradX = np.zeros((n, dx))
+            if grad_cov:
+                ncov = 2 + self.X.shape[1]
+                gradC = -np.ones((ncov,))
+
+            return ll, gradX, gradC
 
         KYYK = np.dot(np.dot(Kinv, YY), Kinv)
 
         ll =  -.5 * np.sum(Kinv * YY)
         ll += -.5 * dy * np.linalg.slogdet(K)[1]
         ll += -.5 * dy * n * np.log(2*np.pi)
-        if not grad_X:
-            return ll, np.array(())
 
-        llgrad = np.zeros((n, dx))
-        for p in range(n):
-            for i in range(dx):
-                #dcv_full = self.dKdx(X, p, i)
-                #dll = -.5*np.sum(KYYK * dcv_full)
-                dcv = self.dKdx(X, p, i, return_vec=True)
-                dll = np.dot(KYYK[p,:], dcv)
+        if grad_X:
+            gradX = np.zeros((n, dx))
+            for p in range(n):
+                for i in range(dx):
+                    #dcv_full = self.dKdx(X, p, i)
+                    #dll = -.5*np.sum(KYYK * dcv_full)
+                    dcv = self.dKdx(X, p, i, return_vec=True)
+                    dll = np.dot(KYYK[p,:], dcv)
 
-                dll += -dy * np.dot(prec[p,:], dcv)
+                    dll += -dy * np.dot(prec[p,:], dcv)
 
-                llgrad[p,i] = dll
+                    gradX[p,i] = dll
 
                 #t1 = -np.outer(prec[p,:], dcov_v)
                 #t1[:, p] = -np.dot(prec, dcov_v)
 
-        return ll, llgrad
+        if grad_cov:
+            ncov = 2 + len(self.cov.dfn_params)
+            gradC = np.zeros((ncov,))
+            for i in range(ncov):
+                dKdi = self.dKdi(X, i)
+                dll = .5*np.sum(KYYK * dKdi)
+                dll += -.5 * dy * np.sum(prec * dKdi)
+                gradC[i] = dll
+
+                if np.isnan(dll):
+                    import pdb; pdb.set_trace()
+
+        return ll, gradX, gradC
 
     def __getstate__(self):
         d = self.__dict__.copy()

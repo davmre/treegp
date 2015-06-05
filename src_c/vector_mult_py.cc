@@ -271,6 +271,7 @@ VectorTree::VectorTree (const pyublas::numpy_matrix<double> &pts,
     this->dwfn_dr = deriv_se_wrt_r;
   } else if (wfn_str.compare("matern32") == 0) {
     this->w = w_matern32;
+    this->dwfn_dr = deriv_matern32_wrt_r;
   } else if (wfn_str.compare("compact0") == 0) {
     this->w = w_compact_q0;
   } else if (wfn_str.compare("compact2") == 0) {
