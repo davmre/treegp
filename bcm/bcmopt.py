@@ -98,6 +98,12 @@ class SampledData(object):
     def mean_abs_err(self, x):
         return np.mean(np.abs(x - self.SX.flatten()))
 
+    def median_abs_err(self, x):
+        X = x.reshape(self.SX.shape)
+        R = X - self.SX
+        d = np.sqrt(np.sum(R**2, axis=1))
+        return np.median(d)
+
     def lscale_error(self, FC):
         true_lscale = self.cov.dfn_params[0]
         inferred_lscale = FC[0, 2]
@@ -453,11 +459,36 @@ def do_run(d, lscale, n, ntrain, nblocks, yd, seed=0,
         analyze_run(d, data, local_dist=local_dist)
     else:
         do_optimization(d, mbcm, X0, C0, data, method=method, maxsec=maxsec)
+        fast_analyze(d, data)
 
+def fast_analyze(d, sdata):
 
-    """
-    load the log
-    """
+    segs = os.path.basename(d).split("_")
+    ntrain = int(segs[0])
+    n = int(segs[1])
+    lscale = float(segs[3])
+    obs_std = float(segs[4])
+    yd = 50
+    seed = int(segs[-1][1:])
+
+    
+
+    steps, times, lls = load_log(d)
+    best_idx = np.argmax(lls)
+    step = steps[best_idx]
+
+    rfname = os.path.join(d, "fast_results.txt")
+    results = open(rfname, 'w')
+    
+    fname_X = os.path.join(d, "step_%05d_X.npy" % step)
+    X = np.load(fname_X)
+    l1 = sdata.mean_abs_err(X.flatten())
+    l2 = sdata.median_abs_err(X.flatten())
+
+    s = "%.2f %.4f %.4f" % (times[best_idx], l1, l2)
+    print s
+    results.write(s + "\n")
+    results.close()
 
 def build_run_name(args):
     try:

@@ -183,9 +183,9 @@ def fixedsize_run_params(lscale=0.4, obs_std=0.1):
 
 def plot_models_fixedsize(**kwargs):
     runs = fixedsize_run_params(**kwargs)
-    ylims = {'predll': (-5, 0),
-             'predll_neighbors': (-5, 0),
-             'mad': (0.0, 0.2)}
+    ylims = {'predll': (-3, 0),
+             'predll_neighbors': (-3, 0),
+             'mad': (0.0, 0.1)}
 
 
     def plot_args(label):
@@ -236,7 +236,11 @@ def growing_run_params():
 
 
 def seismic_run_params():
-    npts = [1000, 5000, 10000, 13000]
+
+    #npts = [1000, 5000, 10000, 13000]
+
+    npts = [500, 3000, 8000, 13000]
+
     rpc_sizes = [200, 800]
     thresholds = [0.0, 0.001, 0.1]
 
@@ -460,8 +464,8 @@ def gen_runexp(runs, base_cmd, outfile, analyze=False, maxsec=5400):
 
 def gen_runs():
     #runs_cov = cov_run_params()
-    #runs_fixedsize = fixedsize_run_params(lscale=0.1, obs_std=0.02).values()
-    
+    runs_fixedsize = fixedsize_run_params(lscale=0.1, obs_std=0.02).values()
+    plot_models_fixedsize(lscale=0.1, obs_std=0.02)
 
     #runs_growing = np.concatenate(growing_run_params())
 

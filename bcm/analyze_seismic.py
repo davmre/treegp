@@ -50,7 +50,6 @@ def main():
     npts = len(X1)
 
     md, mdd = mean_distance(X1, X2)
-    print d1
     print "mean distance", md
     print "median distance", mdd
 
