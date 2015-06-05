@@ -376,7 +376,7 @@ def main():
         X0 = None
 
     if not analyze:
-        do_optimization(d, mbcm, X0, C0, cov_prior, x_prior, maxsec=3600, parallel=False)
+        do_optimization(d, mbcm, X0, C0, cov_prior, x_prior, maxsec=args.maxsec, parallel=False)
 
     analyze_run_result(args, mbcm)
 
