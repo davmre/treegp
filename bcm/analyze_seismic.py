@@ -36,7 +36,7 @@ def load_XY(d):
 
 def mean_distance(X1, X2):
     distances = [dist_km(x1[:2], x2[:2]) for x1, x2 in zip(X1, X2)]
-    return np.mean(distances)
+    return np.mean(distances), np.median(distances)
 
 def main():
 
@@ -49,8 +49,9 @@ def main():
     X2, Y2 = load_XY(d2)
     npts = len(X1)
 
-    md = mean_distance(X1, X2)
+    md, mdd = mean_distance(X1, X2)
     print "mean distance", md
+    print "median distance", mdd
 
     nv = C0[0,0]
     cov = GPCov(wfn_params=[C0[0,1]], dfn_params=C0[0, 2:], dfn_str="lld", wfn_str="matern32")
