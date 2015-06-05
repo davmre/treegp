@@ -86,9 +86,9 @@ def sample_crazy_shape(seed, n, std=0.005):
         return np.vstack(Xs)
 
     def sample_crazy_lines(n=1000):
-        seg_npts = 500
+        seg_npts = 250
         segments = n / seg_npts
-        segment_len = 25.298221281347036 / np.sqrt(n)
+        segment_len = 41.10960958218894 / np.sqrt(n) # length 1.3 at 1000 pts
 
         Xs = []
         for i in range(segments):
