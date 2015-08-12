@@ -134,7 +134,7 @@ where
 
   if (deriv_denom == 0) {
     double t2 = pow(sin(d/(2*AVG_EARTH_RADIUS_KM)), 2);
-    printf("WARNING: zero denom deriv in t1 %f t2 %f d %f d/stuff %f dlon %f dlat %f num %f\n", t*1e8, t2*1e8, d*1e8, d/(2*AVG_EARTH_RADIUS_KM) * 1e8, rlon1-rlon2, rlat1-rlat2, deriv_num);
+    //printf("WARNING: zero denom deriv in t1 %f t2 %f d %f d/stuff %f dlon %f dlat %f num %f\n", t*1e8, t2*1e8, d*1e8, d/(2*AVG_EARTH_RADIUS_KM) * 1e8, rlon1-rlon2, rlat1-rlat2, deriv_num);
     return dist_km_deriv_wrt_xi_empirical(p1, p2, i, d);
   }
 

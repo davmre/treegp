@@ -465,6 +465,23 @@ void VectorTree::kernel_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pt
 
 }
 
+void VectorTree::dist_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k, pyublas::numpy_vector<double> D) {
+  // return just the row/col corresponding to the i'th input point (everything else should be zero)
+
+  if (this->ddfn_dx == NULL) {
+    printf("ERROR: gradient not implemented for this distance function.\n");
+    exit(1);
+  }
+  point p1 = {&pts1(i, 0), 0};
+  for (unsigned j = 0; j < pts2.size1 (); ++ j) {
+    point p2 = {&pts2(j, 0), 0};
+    double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    D(j) = dr_dp1;
+  }
+
+}
+
 
 pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i, bool symmetric, const pyublas::numpy_matrix<double> distances) {
 
@@ -678,6 +695,7 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("sparse_training_kernel_matrix", &VectorTree::sparse_training_kernel_matrix)
     .def("kernel_deriv_wrt_xi", &VectorTree::kernel_deriv_wrt_xi)
     .def("kernel_deriv_wrt_xi_row", &VectorTree::kernel_deriv_wrt_xi_row)
+    .def("dist_deriv_wrt_xi_row", &VectorTree::dist_deriv_wrt_xi_row)
     .def("kernel_deriv_wrt_i", &VectorTree::kernel_deriv_wrt_i)
     .def("sparse_kernel_deriv_wrt_i", &VectorTree::sparse_kernel_deriv_wrt_i)
     .def("quadratic_form_from_dense_hack", &VectorTree::quadratic_form_from_dense_hack)
