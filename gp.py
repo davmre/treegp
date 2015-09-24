@@ -18,6 +18,8 @@ from util import mkdir_p
 import scipy.weave as weave
 from scipy.weave import converters
 
+from gpy_linalg import pdinv, dpotrs
+
 
 def marshal_fn(f):
     if f.func_closure is not None:
@@ -287,6 +289,14 @@ class GP(object):
 
         return K.tocsc()
 
+    def invert_kernel_matrix_cheap(self, K):
+        prec, L, Lprec, logdet = pdinv(K)
+        Alpha, _ = dpotrs(L, self.y, lower=1)
+        factor = lambda z : dpotrs(L, z, lower=1)[0]
+        self.logdet = logdet
+        return Alpha, factor, L, prec
+
+
     def invert_kernel_matrix(self, K):
         alpha = None
         t0 = time.time()
@@ -303,9 +313,9 @@ class GP(object):
         t3 = time.time()
         self.timings['solve_Kinv'] = t3-t2
 
-        I = np.dot(Kinv[0,:], K[:,0])
-        if np.abs(I - 1) > 0.01:
-            print "WARNING: poorly conditioned inverse (I=%f)" % I
+        #I = np.dot(Kinv[0,:], K[:,0])
+        #if np.abs(I - 1) > 0.01:
+        #    print "WARNING: poorly conditioned inverse (I=%f)" % I
 
         return alpha, factor, L, Kinv
 
@@ -572,7 +582,7 @@ class GP(object):
                 self.Kinv = self.sparsify(Kinv)
                 #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
             else:
-                alpha, self.factor, L, Kinv = self.invert_kernel_matrix(self.K)
+                alpha, self.factor, L, Kinv = self.invert_kernel_matrix_cheap(self.K)
                 if build_tree:
                     self.Kinv = self.sparsify(Kinv)
                     #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
@@ -1095,7 +1105,7 @@ class GP(object):
         if not parametric_only:
             gp_cov = self.kernel(X1,X1, identical=include_obs)
             if self.n > 0:
-                tmp = self.Kinv * Kstar
+                tmp = np.dot(self.Kinv, Kstar)
                 qf = np.dot(Kstar.T, tmp)
                 if qf_only:
                     return qf
@@ -1476,26 +1486,32 @@ class GP(object):
         if cache_dense and self.n > 0:
             self.Kinv_dense = self.Kinv.todense()
 
-
-
-
     def _compute_marginal_likelihood(self, L, z, Binv, H, K, Kinv):
+
+
+        z = np.reshape(z, (-1, 1))
+
 
         if scipy.sparse.issparse(L):
             ldiag = L.diagonal()
         else:
             ldiag = np.diag(L)
 
-        z = np.reshape(z, (-1, 1))
 
         # everything is much simpler in the pure nonparametric case
         if self.n_features == 0:
-            ld2_K = np.log(ldiag).sum()
-            if np.isnan(ld2_K):
-                import pdb; pdb.set_trace()
+            try:
+                ld2_K = self.logdet / 2.0
+            except:
+                ld2_K = np.log(ldiag).sum()
+
+            #if np.isnan(ld2_K):
+            #    import pdb; pdb.set_trace()
             self.ll =  -.5 * (np.dot(self.y.T, self.alpha_r) + self.n * np.log(2*np.pi)) - ld2_K
 
             return
+
+
 
         # keeping explicit CSFIC likelihood code commented out, for debugging.
         # in practice we use the optimized version below
