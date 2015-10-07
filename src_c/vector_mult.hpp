@@ -149,9 +149,14 @@ public:
   void dist_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k, pyublas::numpy_vector<double> D);
 
   pyublas::numpy_matrix<double> kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int param_i,  bool symmetric, const pyublas::numpy_matrix<double> distances);
+
+
+  pyublas::numpy_vector<double> sparse_distances(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc);
+  pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_xi(const pyublas::numpy_matrix<double> &pts1, int k, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, const pyublas::numpy_vector<double> distance_entries);
   pyublas::numpy_vector<double> sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries);
 
   void dump_tree(const std::string &fname);
+  void dump_clusters(const std::string &fname, int cluster_size);
 
   void set_Kinv_for_dense_hack(const pyublas::numpy_strided_vector<int> &nonzero_rows,
 			       const pyublas::numpy_strided_vector<int> &nonzero_cols,

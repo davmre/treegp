@@ -184,6 +184,22 @@ double VectorTree::weighted_sum(int v_select, const pyublas::numpy_matrix<double
   return ws;
 }
 
+void dump_clusters_node (node<point> &n, int depth, int cluster_size, FILE * fp) {
+  if (n.num_leaves < cluster_size) {
+    fprintf(fp, "%f %f %f %d\n", n.p.p[0], n.p.p[1], n.p.p[2], n.num_leaves);
+  } else {
+    for(int i=0; i < n.num_children; ++i) {
+      dump_clusters_node(n.children[i], depth+1, cluster_size, fp);
+    }
+  }
+}
+
+void VectorTree::dump_clusters(const string &fname, int cluster_size) {
+  FILE * fp = fopen(fname.c_str(), "w");
+  dump_clusters_node(this->root, 0, cluster_size, fp);
+  fclose(fp);
+}
+
 void dump_tree_node (node<point> &n, int depth, FILE * fp) {
   fprintf(fp, "%f %f %f %d\n", n.p.p[0], n.p.p[1], n.max_dist, depth);
   for(int i=0; i < n.num_children; ++i) {
@@ -465,6 +481,33 @@ void VectorTree::kernel_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pt
 
 }
 
+
+pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_xi(const pyublas::numpy_matrix<double> &pts1, int k, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, const pyublas::numpy_vector<double> distance_entries) {
+
+  pyublas::numpy_vector<double> entries(nzr.size());
+  if (this->ddfn_dtheta == NULL) {
+    printf("ERROR: gradient not implemented for this distance function.\n");
+    exit(1);
+  }
+  if (this->dwfn_dr == NULL) {
+    printf("ERROR: gradient not implemented for this weight function.\n");
+    exit(1);
+  }
+
+  for (unsigned i = 0; i < nzr.size(); ++ i) {
+    point p1 = {&pts1(nzr[i], 0), 0};
+    point p2 = {&pts1(nzc[i], 0), 0};
+
+    // double r = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+
+    double r = distance_entries[i];
+    double dr_dp1 = this->ddfn_dx(p1.p, p2.p, k, r, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+    entries[i] = this->dwfn_dr(r, dr_dp1, this->wp);
+  }
+
+  return entries;
+}
+
 void VectorTree::dist_deriv_wrt_xi_row(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, int i, int k, pyublas::numpy_vector<double> D) {
   // return just the row/col corresponding to the i'th input point (everything else should be zero)
 
@@ -539,6 +582,18 @@ pyublas::numpy_matrix<double> VectorTree::kernel_deriv_wrt_i(const pyublas::nump
 
   return K;
 }
+
+pyublas::numpy_vector<double> VectorTree::sparse_distances(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc) {
+  pyublas::numpy_vector<double> entries(nzr.size());
+  for (unsigned i = 0; i < nzr.size(); ++ i) {
+    point p1 = {&pts1(nzr[i], 0), 0};
+    point p2 = {&pts2(nzc[i], 0), 0};
+
+    entries[i] = this->dfn(p1, p2, std::numeric_limits< double >::max(), this->dist_params, this->dfn_extra);
+  }
+  return entries;
+}
+
 
 pyublas::numpy_vector<double> VectorTree::sparse_kernel_deriv_wrt_i(const pyublas::numpy_matrix<double> &pts1, const pyublas::numpy_matrix<double> &pts2, const pyublas::numpy_vector<int> &nzr, const pyublas::numpy_vector<int> &nzc, int param_i, const pyublas::numpy_vector<double> distance_entries) {
 
@@ -688,6 +743,7 @@ VectorTree::~VectorTree() {
 BOOST_PYTHON_MODULE(cover_tree) {
   bp::class_<VectorTree>("VectorTree", bp::init< pyublas::numpy_matrix< double > const &, int const, string const &, pyublas::numpy_vector< double > const &, string const &, pyublas::numpy_vector< double > const &>())
     .def("dump_tree", &VectorTree::dump_tree)
+    .def("dump_clusters", &VectorTree::dump_clusters)
     .def("set_v", &VectorTree::set_v)
     .def("get_v", &VectorTree::get_v)
     .def("weighted_sum", &VectorTree::weighted_sum)
@@ -698,6 +754,8 @@ BOOST_PYTHON_MODULE(cover_tree) {
     .def("dist_deriv_wrt_xi_row", &VectorTree::dist_deriv_wrt_xi_row)
     .def("kernel_deriv_wrt_i", &VectorTree::kernel_deriv_wrt_i)
     .def("sparse_kernel_deriv_wrt_i", &VectorTree::sparse_kernel_deriv_wrt_i)
+    .def("sparse_kernel_deriv_wrt_xi", &VectorTree::sparse_kernel_deriv_wrt_xi)
+    .def("sparse_distances", &VectorTree::sparse_distances)
     .def("quadratic_form_from_dense_hack", &VectorTree::quadratic_form_from_dense_hack)
     .def("set_Kinv_for_dense_hack", &VectorTree::set_Kinv_for_dense_hack)
     .def_readonly("nodes_touched", &VectorTree::nodes_touched)
