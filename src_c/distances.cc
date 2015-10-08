@@ -249,7 +249,7 @@ double dist3d_deriv_wrt_xi(const double * p1, const double * p2, int i, double d
     double dxi = (dkm * d_dkm_di) / (scales[0] * scales[0] * d);
 
     if (dxi < -99999) {
-      printf("WARNING: invalid lld derivative!\n i %d dkm %f d_dkm_di %f scale %f d %f dxi %f p1 (%f, %f, %f) p2 (%f, %f, %f)\n", i, dkm, d_dkm_di, scales[0], d, dxi, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+      //printf("WARNING: invalid lld derivative!\n i %d dkm %f d_dkm_di %f scale %f d %f dxi %f p1 (%f, %f, %f) p2 (%f, %f, %f)\n", i, dkm, d_dkm_di, scales[0], d, dxi, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
       return 0;
     }
 
