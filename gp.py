@@ -566,7 +566,11 @@ class GP(object):
 
             # setup the parameteric features, if applicable, and return the feature representation of X
             H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
-
+            if H is not None and param_mean is None:
+                n_features = H.shape[0]
+                param_mean = np.zeros((n_features,))
+                param_cov = np.eye(n_features) * 100.0
+                
             if cov_fic is not None:
                 self.K, self.K_fic_uu, self.K_fic_un = self.init_csfic_kernel(self.K)
             else:
@@ -1105,7 +1109,11 @@ class GP(object):
         if not parametric_only:
             gp_cov = self.kernel(X1,X1, identical=include_obs)
             if self.n > 0:
-                tmp = np.dot(self.Kinv, Kstar)
+                if isinstance(self.Kinv, np.ndarray):
+                    tmp = np.dot(self.Kinv, Kstar)
+                else:
+                    tmp = self.Kinv.dot(Kstar)
+
                 qf = np.dot(Kstar.T, tmp)
                 if qf_only:
                     return qf
