@@ -592,6 +592,8 @@ class GP(object):
                     #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
                 else:
                     self.Kinv=np.matrix(Kinv)
+            # not used for anything internally, but store it so that other classes can access
+            self.L = L
 
             #print "inverted kernel matrix"
 
@@ -1575,7 +1577,7 @@ class GP(object):
 
 
         ld2_K = np.log(ldiag).sum()
-        ld2 =  np.log(np.diag(self.c)).sum() # det( B^-1 - H * K^-1 * H.T )
+        ld2 =  np.log(np.diag(self.c)).sum() # det( B^-1 + H * K^-1 * H.T )
         ld_B = -np.log(np.linalg.det(Binv))
 
         # eqn 2.43 in R&W, using the matrix inv lemma
@@ -1956,6 +1958,7 @@ class GP(object):
                 K_HBH_inv = Kinv - np.dot(tmp.T, tmp)
                 alpha = np.matrix(np.reshape(np.dot(K_HBH_inv, z), (-1, 1)))
                 M = np.matrix(K_HBH_inv)
+
             #Qnn=np.dot(self.K_fic_un.T, np.dot(np.linalg.inv(self.K_fic_uu), self.K_fic_un))
             #K_HBH = self.K + Qnn
             #K_HBH_inv = np.linalg.inv(K_HBH)
