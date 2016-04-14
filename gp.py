@@ -485,7 +485,41 @@ class GP(object):
 
     ###################################################################################
 
+    def setup_kernel_matrix(self, sparse_invert=False, build_tree=False):
 
+        try:
+            self.predict_tree
+        except:
+            self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
+
+
+        if sparse_invert:
+            self._set_max_distance()
+            self.K = self.sparse_training_kernel_matrix(self.X)
+        else:
+            self.K = self.training_kernel_matrix(self.X)
+
+        if self.cov_fic is not None:
+            self.K, self.K_fic_uu, self.K_fic_un = self.init_csfic_kernel(self.K)
+        else:
+            self.K_fic_uu, self.K_fic_un = None, None
+
+        if sparse_invert:
+            if type(self.K) == np.ndarray or type(self.K) == np.matrix:
+                self.K = self.sparsify(self.K)
+            alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
+            self.Kinv = self.sparsify(Kinv)
+            #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+        else:
+            alpha, self.factor, L, Kinv = self.invert_kernel_matrix_cheap(self.K)
+            if build_tree:
+                self.Kinv = self.sparsify(Kinv)
+                #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
+            else:
+                self.Kinv=np.matrix(Kinv)
+        # not used for anything internally, but store it so that other classes can access
+        self.L = L
+        return alpha
 
     def __init__(self, X=None, y=None,
                  y_obs_variances=None,
@@ -515,120 +549,93 @@ class GP(object):
 
         self.double_tree = None
         if fname is not None:
-            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
-        else:
-            if sort_events:
-                X, y, y_obs_variances = sort_morton(X, y, y_obs_variances) # arrange events by
-                # lon/lat, as a
-                # heuristic to expose
-                # block structure in the
-                # kernel matrix
+            self.load_trained_model(fname, build_tree=build_tree, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree, sparse_invert=sparse_invert)
+            return
+
+        if sort_events:
+            X, y, y_obs_variances = sort_morton(X, y, y_obs_variances) # arrange events by
+            # lon/lat, as a
+            # heuristic to expose
+            # block structure in the
+            # kernel matrix
 
 
-            self.cov_main, self.cov_fic, self.noise_var, self.sparse_threshold, self.basis = cov_main, cov_fic, noise_var, sparse_threshold, basis
+        self.cov_main, self.cov_fic, self.noise_var, self.sparse_threshold, self.basis = cov_main, cov_fic, noise_var, sparse_threshold, basis
 
-            self.timings = dict()
+        self.timings = dict()
 
-            if X is not None:
-                self.X = np.matrix(X, dtype=float)
-                self.y = np.array(y, dtype=float)
-                if center_mean:
-                    self.ymean = np.mean(y)
-                    self.y -= self.ymean
-                else:
-                    self.ymean = ymean
-                    self.y -= self.ymean
-                self.n = X.shape[0]
-                if y_obs_variances is not None:
-                    self.y_obs_variances = np.array(y_obs_variances, dtype=float).flatten()
-                else:
-                    self.y_obs_variances = None
-
+        if X is not None:
+            self.X = np.matrix(X, dtype=float)
+            self.y = np.array(y, dtype=float)
+            if center_mean:
+                self.ymean = np.mean(y)
+                self.y -= self.ymean
             else:
-                self.X = np.reshape(np.array(()), (0,0))
-                self.y = np.reshape(np.array(()), (0,))
-                self.n = 0
                 self.ymean = ymean
-                self.K = np.reshape(np.array(()), (0,0))
-                self.Kinv = np.reshape(np.array(()), (0,0))
-                self.alpha_r = self.y
-                self.ll = np.float('-inf')
-                return
-
-            self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
-
-            # compute sparse training kernel matrix (including per-observation noise if appropriate)
-            if sparse_invert:
-                self._set_max_distance()
-                self.K = self.sparse_training_kernel_matrix(self.X)
+                self.y -= self.ymean
+            self.n = X.shape[0]
+            if y_obs_variances is not None:
+                self.y_obs_variances = np.array(y_obs_variances, dtype=float).flatten()
             else:
-                self.K = self.training_kernel_matrix(self.X)
+                self.y_obs_variances = None
 
-            # setup the parameteric features, if applicable, and return the feature representation of X
-            H = self.setup_parametric_featurizer(X, featurizer_recovery, basis, extract_dim)
-            if H is not None and param_mean is None:
-                n_features = H.shape[0]
-                param_mean = np.zeros((n_features,))
-                param_cov = np.eye(n_features) * 100.0
-                
-            if cov_fic is not None:
-                self.K, self.K_fic_uu, self.K_fic_un = self.init_csfic_kernel(self.K)
-            else:
-                self.K_fic_uu, self.K_fic_un = None, None
+        else:
+            self.X = np.reshape(np.array(()), (0,0))
+            self.y = np.reshape(np.array(()), (0,))
+            self.n = 0
+            self.ymean = ymean
+            self.K = np.reshape(np.array(()), (0,0))
+            self.Kinv = np.reshape(np.array(()), (0,0))
+            self.alpha_r = self.y
+            self.ll = np.float('-inf')
+            return
 
-            #print "built kernel matrix"
+        # compute sparse training kernel matrix (including
+        # per-observation noise if appropriate), and invert it.
+        alpha = self.setup_kernel_matrix(sparse_invert=sparse_invert,
+                                         build_tree=build_tree)
 
-            # invert kernel matrix
-            if sparse_invert:
-                if type(self.K) == np.ndarray or type(self.K) == np.matrix:
-                    self.K = self.sparsify(self.K)
-                alpha, self.factor, L, Kinv = self.sparse_invert_kernel_matrix(self.K)
-                self.Kinv = self.sparsify(Kinv)
-                #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
-            else:
-                alpha, self.factor, L, Kinv = self.invert_kernel_matrix_cheap(self.K)
-                if build_tree:
-                    self.Kinv = self.sparsify(Kinv)
-                    #print "Kinv is ", len(self.Kinv.nonzero()[0]) / float(self.Kinv.shape[0]**2), "full (vs diag at", 1.0/self.Kinv.shape[0], ")"
-                else:
-                    self.Kinv=np.matrix(Kinv)
-            # not used for anything internally, but store it so that other classes can access
-            self.L = L
+        # setup the parameteric features, if applicable, and return the feature representation of X
+        H = self.setup_parametric_featurizer(self.X, featurizer_recovery, 
+                                             basis, extract_dim)
+        if H is not None and param_mean is None:
+            n_features = H.shape[0]
+            param_mean = np.zeros((n_features,))
+            param_cov = np.eye(n_features) * 100.0
 
-            #print "inverted kernel matrix"
 
-            # if we have any additive low-rank covariances, compute the appropriate terms
-            if H is not None or cov_fic is not None:
-                HH, b, Binv = self.combine_lowrank_models(H, param_mean, param_cov, self.K_fic_un, self.K_fic_uu)
-                self.c, self.invc,self.beta_bar, self.HKinv = self.build_low_rank_model(alpha,
-                                                                                        self.Kinv,
-                                                                                        HH,
-                                                                                        b,
-                                                                                        Binv)
-                r = self.y - np.dot(HH.T, self.beta_bar)
-                self.alpha_r = np.reshape(np.asarray(self.factor(r)), (-1,))
+        # if we have any additive low-rank covariances, compute the appropriate terms
+        if H is not None or cov_fic is not None:
+            HH, b, Binv = self.combine_lowrank_models(H, param_mean, param_cov, self.K_fic_un, self.K_fic_uu)
+            self.c, self.invc,self.beta_bar, self.HKinv = self.build_low_rank_model(alpha,
+                                                                                    self.Kinv,
+                                                                                    HH,
+                                                                                    b,
+                                                                                    Binv)
+            r = self.y - np.dot(HH.T, self.beta_bar)
+            self.alpha_r = np.reshape(np.asarray(self.factor(r)), (-1,))
 
-                z = np.dot(HH.T, b) - self.y
-            else:
-                self.n_features = 0
-                self.HKinv = None
-                self.alpha_r = np.reshape(alpha, (-1,))
-                r = self.y
-                z = self.y
-                Binv = None
-                HH = None
+            z = np.dot(HH.T, b) - self.y
+        else:
+            self.n_features = 0
+            self.HKinv = None
+            self.alpha_r = np.reshape(alpha, (-1,))
+            r = self.y
+            z = self.y
+            Binv = None
+            HH = None
 
-            if build_tree:
-                self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
+        if build_tree:
+            self.build_point_tree(HKinv = self.HKinv, Kinv=self.Kinv, alpha_r = self.alpha_r, leaf_bin_width=leaf_bin_width, build_dense_Kinv_hack=build_dense_Kinv_hack, compile_tree=compile_tree)
 
-            # precompute training set log likelihood, so we don't need
-            # to keep L around.
-            if compute_ll:
-                self._compute_marginal_likelihood(L=L, z=z, Binv=Binv, H=HH, K=self.K, Kinv=self.Kinv)
-            else:
-                self.ll = -np.inf
-            if compute_grad:
-                self.ll_grad = self._log_likelihood_gradient(z=z, Kinv=self.Kinv, include_xu=compute_xu_grad)
+        # precompute training set log likelihood, so we don't need
+        # to keep L around.
+        if compute_ll:
+            self._compute_marginal_likelihood(L=self.L, z=z, Binv=Binv, H=HH, K=self.K, Kinv=self.Kinv)
+        else:
+            self.ll = -np.inf
+        if compute_grad:
+            self.ll_grad = self._log_likelihood_gradient(z=z, Kinv=self.Kinv, include_xu=compute_xu_grad)
 
     def build_initial_single_trees(self, build_single_trees = False):
         if build_single_trees:
@@ -1376,9 +1383,9 @@ class GP(object):
 
         return ll
 
+    
 
-
-    def pack_npz(self):
+    def pack_npz(self, tight=False):
         d = dict()
         if self.n_features > 0:
             d['beta_bar'] = self.beta_bar
@@ -1393,7 +1400,10 @@ class GP(object):
             d['y_obs_variances'] =self.y_obs_variances,
         d['ymean'] = self.ymean,
         d['alpha_r'] =self.alpha_r
-        d['Kinv'] =self.Kinv,
+
+        if not tight:
+            d['Kinv'] =self.Kinv
+
         #d['K'] =self.K,
         d['sparse_threshold'] =self.sparse_threshold,
         d['noise_var'] =self.noise_var,
@@ -1420,17 +1430,19 @@ class GP(object):
 
 
 
-    def save_trained_model(self, filename):
+    def save_trained_model(self, filename, tight=False):
         """
         Serialize the model to a file.
         """
-        d = self.pack_npz()
+        d = self.pack_npz(tight=tight)
         with open(filename, 'wb') as f:
             np.savez(f, **d)
 
     def unpack_npz(self, npzfile):
         self.X = npzfile['X'][0]
         self.y = npzfile['y'][0]
+        self.n = self.X.shape[0]
+
         if 'y_obs_variances' in npzfile:
             self.y_obs_variances = npzfile['y_obs_variances'][0]
         else:
@@ -1455,12 +1467,9 @@ class GP(object):
         if self.cov_fic is not None:
             self.Luu = npzfile['Luu'][0]
 
-        self.Kinv = npzfile['Kinv'][0]
-        #self.K = npzfile['K'][0]
+
         self.sparse_threshold = npzfile['sparse_threshold'][0]
         self.ll = npzfile['ll'][0]
-
-
 
 
         if 'basis' in npzfile:
@@ -1478,14 +1487,25 @@ class GP(object):
         else:
             self.HKinv = None
 
-    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0, build_dense_Kinv_hack=False, compile_tree=None):
+        if 'Kinv' in npzfile:
+            self.Kinv = npzfile['Kinv'][0]
+
+    def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0, build_dense_Kinv_hack=False, compile_tree=None, sparse_invert=False):
         npzfile = np.load(filename)
         self.unpack_npz(npzfile)
         del npzfile.f
         npzfile.close()
 
+        try:
+            sparse_invert = scipy.sparse.issparse(self.Kinv)
+        except:
+            # recompute Kinv from scratch
+            self.timings = dict()
+            alpha = self.setup_kernel_matrix(build_tree=build_tree, sparse_invert=sparse_invert)
+            del self.K
+            del self.L
+
         self.n = self.X.shape[0]
-        sparse_invert = scipy.sparse.issparse(self.Kinv)
         self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
         if build_tree:
