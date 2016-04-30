@@ -3,7 +3,7 @@ import numpy as np
 
 def ortho_poly_fit(x, degree = 1):
     n = degree + 1
-    x = x.flatten()
+    x = np.asarray(x).flatten()
     if(degree >= len(np.unique(x))):
             stop("'degree' must be less than number of unique points")
     xbar = np.mean(x)
@@ -21,7 +21,7 @@ def ortho_poly_fit(x, degree = 1):
     return Z, norm2, alpha
 
 def ortho_poly_predict(x, alpha, norm2, degree=1):
-    x = x.flatten()
+    x = np.asarray(x).flatten()
     n = degree + 1
     Z = np.empty((len(x), n))
     Z[:,0] = 1
@@ -35,7 +35,7 @@ def ortho_poly_predict(x, alpha, norm2, degree=1):
     return Z
 
 def sin_transform(X, n):
-    X = X.flatten()
+    X = np.asarray(X).flatten()
     features = np.empty((X.shape[0], 2*n+2))
     features[:, 0] = 1
     #features[:, 1] = np.log(X+100)

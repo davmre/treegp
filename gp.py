@@ -296,7 +296,6 @@ class GP(object):
         self.logdet = logdet
         return Alpha, factor, L, prec
 
-
     def invert_kernel_matrix(self, K):
         alpha = None
         t0 = time.time()
@@ -316,7 +315,6 @@ class GP(object):
         #I = np.dot(Kinv[0,:], K[:,0])
         #if np.abs(I - 1) > 0.01:
         #    print "WARNING: poorly conditioned inverse (I=%f)" % I
-
         return alpha, factor, L, Kinv
 
     def sparse_invert_kernel_matrix(self, K):
@@ -1428,8 +1426,6 @@ class GP(object):
         self.double_tree = None
         self.n = self.X.shape[0]
 
-
-
     def save_trained_model(self, filename, tight=False):
         """
         Serialize the model to a file.
@@ -1488,7 +1484,12 @@ class GP(object):
             self.HKinv = None
 
         if 'Kinv' in npzfile:
-            self.Kinv = npzfile['Kinv'][0]
+            Kinv = npzfile['Kinv']
+            try:
+                Kinv[0,0]
+                self.Kinv = Kinv
+            except:
+                self.Kinv = Kinv[0]
 
     def load_trained_model(self, filename, build_tree=True, cache_dense=False, leaf_bin_width=0, build_dense_Kinv_hack=False, compile_tree=None, sparse_invert=False):
         npzfile = np.load(filename)
