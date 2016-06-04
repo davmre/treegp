@@ -108,7 +108,7 @@ class node {
   node<T>* debug_parent;
 
   node();
-  //~node();
+  // ~node();
   void alloc_arms(unsigned int narms);
   void free_tree();
 };
@@ -127,12 +127,15 @@ node<T>::node() {
   this->n_extra_p = 0;
 }
 
+
 /*
 template<class T>
 node<T>::~node() {
 
 
-  this->free_tree_recursive();
+  this->free_tree();
+
+
   if (this->narms > 1) {
     delete this->unweighted_sums;
     delete this->unweighted_sums_abs;
@@ -189,8 +192,14 @@ void node<T>::free_tree() {
   }
 
   for(unsigned int i=0; i < num_children; ++i) {
-    delete (this->children + i);
+    this->children[i].free_tree();
   }
+  free(this->children);
+
+  //printf("freeing tree with %d arms %d children\n", this->narms, num_children);
+  //for(unsigned int i=0; i < num_children; ++i) {
+  //  delete (this->children + i);
+  //}
 }
 
 
@@ -335,9 +344,9 @@ node<T> batch_insert(const ds_node<T>& p,
 		  typename distfn<T>::Type distance,
 		const double* dist_params, void* dist_extra)
 {
-  if (point_set.index == 0)
+  if (point_set.index == 0) {
     return new_leaf(p);
-  else {
+  } else {
     double max_dist = max_set(point_set); //O(|point_set|)
     int next_scale = min (max_scale - 1, get_scale(max_dist));
 
@@ -467,6 +476,7 @@ template<class T> node<T> batch_create(const std::vector<T> &points,
 			  consumed_set,
 			  stack,
 			  distance, dist_params, dist_extra);
+
   for (int i = 0; i<consumed_set.index;i++)
     free(consumed_set[i].dist.elements);
   free(consumed_set.elements);

@@ -398,7 +398,14 @@ pyublas::numpy_matrix<double> VectorTree::sparse_training_kernel_matrix(const py
       nzero++;
     }
     //printf("inserted %d neighbors for point %d\n", res[0].index-1, i);
+
+  for (int jj=0; jj < res.index; ++jj) {
+    free(res[jj].elements);
   }
+  free(res.elements);
+
+  }
+
   K.resize(nzero, 3);
   return K;
 }
@@ -719,6 +726,13 @@ double VectorTree::quadratic_form_from_dense_hack(const pyublas::numpy_matrix<do
     }
   }
 
+
+  for (int jj=0; jj < res.index; ++jj) {
+    free(res[jj].elements);
+  }
+  free(res.elements);
+  free(kstar.elements);
+
   gettimeofday(&stop, NULL);
   this->dense_hack_math_s =(stop.tv_sec - start.tv_sec) + (stop.tv_usec - start.tv_usec)/1000000.0;
   return qf;
@@ -738,6 +752,9 @@ VectorTree::~VectorTree() {
     delete[] this->wp;
     this->wp = NULL;
   }
+
+  this->root.free_tree();
+
 }
 
 BOOST_PYTHON_MODULE(cover_tree) {
