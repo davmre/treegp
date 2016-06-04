@@ -490,7 +490,6 @@ class GP(object):
         except:
             self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
 
-
         if sparse_invert:
             self._set_max_distance()
             self.K = self.sparse_training_kernel_matrix(self.X)
@@ -1499,6 +1498,7 @@ class GP(object):
 
         try:
             sparse_invert = scipy.sparse.issparse(self.Kinv)
+            self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
         except:
             # recompute Kinv from scratch
             self.timings = dict()
@@ -1507,7 +1507,7 @@ class GP(object):
             del self.L
 
         self.n = self.X.shape[0]
-        self.predict_tree, self.predict_tree_fic = self.build_initial_single_trees(build_single_trees=sparse_invert)
+
 
         if build_tree:
             #self.factor = scikits.sparse.cholmod.cholesky(self.K)
